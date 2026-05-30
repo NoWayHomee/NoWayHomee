@@ -322,6 +322,24 @@ export class CompatController {
     return this.compatService.bookingReport();
   }
 
+  @Roles(Role.ADMIN)
+  @Post('admin/bookings/:id/cancel')
+  adminCancelBooking(@Param('id') id: string) {
+    return this.compatService.adminCancelBooking(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Post('admin/bookings/:id/mark-paid')
+  adminMarkBookingPaid(@Param('id') id: string) {
+    return this.compatService.adminMarkBookingPaid(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Post('admin/bookings/:id/reject-cancel')
+  adminRejectBookingCancel(@Param('id') id: string) {
+    return this.compatService.adminRejectBookingCancel(id);
+  }
+
   @Roles(Role.PARTNER)
   @Get('partner/booking-report')
   partnerBookingReport(@CurrentUser() user: AuthenticatedUser) {
