@@ -4,49 +4,28 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useBooking } from '../../context/BookingContext';
 import {
   User, Bell, ChevronRight, ChevronLeft,
-  Receipt, Heart, Settings, BedDouble, Ticket
+  Receipt, Heart, Settings, BedDouble, Ticket,
+  Star, Camera, X
 } from 'lucide-react';
 import ETicketModal from '../../components/booking/ETicketModal';
-
-// ====== DỮ LIỆU MẪU - các giao dịch (khớp với ảnh thiết kế) ======
-const mockTransactions = [
-  {
-    id: 1,
-    orderCode: '#TRV-8942',
-    name: 'Khách sạn Rex Saigon',
-    dateBooked: '15/10/2024',
-    dateRange: '20/10 - 23/10/2024',
-    price: '3.500.000 đ',
-    status: 'success',
-  },
-  {
-    id: 2,
-    orderCode: '#FLG-4123',
-    name: 'Halong Elegence',
-    dateBooked: '24/10/2024',
-    dateRange: '05/11/2024',
-    price: '2.100.000 đ',
-    status: 'processing',
-  },
-  {
-    id: 3,
-    orderCode: '#ACT-9011',
-    name: 'Vinpearl Resort',
-    dateBooked: '01/09/2024',
-    dateRange: '15/09/2024',
-    price: '1.800.000 đ',
-    status: 'cancelled',
-  },
-];
 
 const TransactionHistory = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { bookings, updateBookingStatus, markBookingAsReviewed } = useBooking();
 
-  const [transactions, setTransactions] = useState(mockTransactions);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+
+  // States cho tính năng Đánh giá từ khách thật
+  const [reviewingTransaction, setReviewingTransaction] = useState(null);
+  const [reviewStars, setReviewStars] = useState(5);
+  const [reviewHoverStars, setReviewHoverStars] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewImages, setReviewImages] = useState([]); // Chứa chuỗi ảnh Base64
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   // Dropdown lọc trạng thái
   const [statusFilter, setStatusFilter] = useState('all');
@@ -63,19 +42,134 @@ const TransactionHistory = () => {
   ];
 
   // Lọc theo trạng thái
-  const filteredTransactions = transactions.filter((t) =>
+  const filteredTransactions = bookings.filter((t) =>
     statusFilter === 'all' || t.status === statusFilter
   );
 
   const handleCancelRequest = (transactionId) => {
-    setTransactions((prev) =>
-      prev.map((t) =>
-        t.id === transactionId ? { ...t, status: 'cancel_pending' } : t
-      )
-    );
+    updateBookingStatus(transactionId, 'cancel_pending');
     setSelectedTransaction((prev) => 
       prev?.id === transactionId ? { ...prev, status: 'cancel_pending' } : prev
     );
+  };
+
+  const toSlug = (str) => {
+    if (!str) return 'hotel';
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/([^0-9a-z-\s])/g, '')
+      .replace(/(\s+)/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  };
+
+  const handlePhotoUpload = (e) => {
+    const files = Array.from(e.target.files);
+    const availableSlots = 5 - reviewImages.length;
+    const filesToUpload = files.slice(0, availableSlots);
+
+    filesToUpload.forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReviewImages(prev => [...prev, event.target.result]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removePhoto = (index) => {
+    setReviewImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleReviewSubmit = () => {
+    if (!reviewComment.trim()) {
+      alert("Vui lòng nhập nhận xét của bạn.");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    setTimeout(() => {
+      // 1. Tạo đánh giá mới
+      const newReview = {
+        id: Date.now(),
+        userName: user?.name || "Khách ẩn danh",
+        userAvatar: user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}&hair=shortCombover`,
+        rating: reviewStars,
+        date: new Date().toLocaleDateString('vi-VN'),
+        comment: reviewComment,
+        roomName: reviewingTransaction.roomName || "Studio Tiêu Chuẩn",
+        images: reviewImages
+      };
+
+      // 2. Lưu vào key slug
+      const hotelSlug = toSlug(reviewingTransaction.name);
+      const storageKey = `reviews_${hotelSlug}`;
+      
+      let existingReviews = [];
+      const stored = localStorage.getItem(storageKey);
+      
+      // Nếu đã có reviews thì load, ngược lại tạo mồi từ mockReviews
+      if (stored) {
+        try {
+          existingReviews = JSON.parse(stored);
+        } catch(e) {}
+      } else {
+        const mockReviews = [
+          {
+            id: 1,
+            userName: "Nguyễn Minh Tâm",
+            userAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=Tam&hair=shortCombover`,
+            rating: 5,
+            date: "14/05/2026",
+            comment: "Khách sạn cực kỳ đẹp, phòng rộng rãi và sạch sẽ ngoài mong đợi. Nhân viên lễ tân nhiệt tình hướng dẫn các điểm đi chơi xung quanh. Buffet sáng ngon và đa dạng món ăn. Nhất định sẽ quay lại lần sau!",
+            roomName: "Studio Tiêu Chuẩn (Standard Studio)",
+            images: [
+              "https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=600&q=80",
+              "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=600&q=80"
+            ]
+          },
+          {
+            id: 2,
+            userName: "Trần Thị Thu Thảo",
+            userAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=Thao&hair=long`,
+            rating: 4,
+            date: "28/04/2026",
+            comment: "Vị trí vô cùng đắc địa, ngay trung tâm nên di chuyển rất tiện. Phòng view hồ bơi siêu chill, chụp ảnh sống ảo góc nào cũng đẹp. Chỉ có điểm trừ nhỏ là cách âm chưa thực sự xuất sắc lắm vào ban ngày, nhưng ban đêm thì rất yên tĩnh.",
+            roomName: "Phòng Deluxe Hướng Biển",
+            images: [
+              "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=600&q=80"
+            ]
+          },
+          {
+            id: 3,
+            userName: "David Pham",
+            userAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=David`,
+            rating: 5,
+            date: "08/04/2026",
+            comment: "Very good experience! Modern room designs and high class amenities. The infinity pool is amazing. Highly recommended for couples.",
+            roomName: "Phòng Suite Thượng Hạng",
+            images: []
+          }
+        ];
+        existingReviews = mockReviews;
+      }
+
+      const updated = [newReview, ...existingReviews];
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      // 3. Đánh dấu đơn đặt phòng này đã được đánh giá
+      markBookingAsReviewed(reviewingTransaction.id);
+
+      setIsSubmittingReview(false);
+      setReviewingTransaction(null);
+      
+      alert("Cảm ơn đóng góp của bạn! Đánh giá đã được đăng thành công và sẽ hiển thị tức thì trên trang chi tiết phòng của khách sạn.");
+    }, 1000);
   };
 
   return (
@@ -118,7 +212,7 @@ const TransactionHistory = () => {
             <div className="flex items-center gap-3 mb-5">
               <div className="w-12 h-12 shrink-0 rounded-full overflow-hidden bg-gray-100">
                 <img
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default"
+                  src={user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default`}
                   alt="Avatar"
                   className="w-full h-full object-cover"
                 />
@@ -224,6 +318,21 @@ const TransactionHistory = () => {
                         Mã đơn: <span className="font-semibold text-gray-700">{transaction.orderCode}</span>
                       </p>
                       <p className="font-bold text-gray-900 text-sm">{transaction.name}</p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[10px] px-2 py-0.5 bg-gray-100 rounded-full text-gray-500 font-medium border border-gray-200/50">
+                          {transaction.paymentMethod === 'pay_later' 
+                            ? 'Trả sau (tại khách sạn)' 
+                            : transaction.paymentMethod === 'credit_card' 
+                            ? 'Thẻ tín dụng' 
+                            : transaction.paymentMethod === 'momo' 
+                            ? 'Ví MoMo' 
+                            : transaction.paymentMethod === 'zalopay' 
+                            ? 'Ví ZaloPay' 
+                            : transaction.paymentMethod === 'bank_transfer' 
+                            ? 'Chuyển khoản' 
+                            : 'Đã thanh toán'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Ngày đặt & ngày thực hiện */}
@@ -279,9 +388,32 @@ const TransactionHistory = () => {
                             console.log('Opening ETicketModal for transaction:', transaction);
                             setSelectedTransaction(transaction);
                           }}
-                          className="text-[#0064a3] text-xs font-semibold hover:underline flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 transition-colors hover:bg-blue-100 cursor-pointer z-10"
+                          className="text-[#0064a3] text-xs font-semibold hover:underline flex items-center justify-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 transition-colors hover:bg-blue-100 cursor-pointer z-10 w-full"
                         >
                           <Ticket className="w-3.5 h-3.5" /> Vé điện tử
+                        </button>
+                      )}
+                      {transaction.status === 'success' && (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (transaction.isReviewed) return;
+                            setReviewingTransaction(transaction);
+                            setReviewStars(5);
+                            setReviewComment('');
+                            setReviewImages([]);
+                          }}
+                          className={`text-xs font-semibold flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border transition-colors cursor-pointer z-10 w-full mt-1 ${
+                            transaction.isReviewed 
+                              ? 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed' 
+                              : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300'
+                          }`}
+                          disabled={transaction.isReviewed}
+                        >
+                          <Star className={`w-3.5 h-3.5 ${transaction.isReviewed ? 'text-gray-400 fill-gray-400' : 'text-amber-500 fill-amber-500'}`} /> 
+                          {transaction.isReviewed ? 'Đã đánh giá' : 'Đánh giá ngay'}
                         </button>
                       )}
                       {transaction.status === 'processing' && (
@@ -365,6 +497,147 @@ const TransactionHistory = () => {
           onClose={() => setSelectedTransaction(null)} 
           onCancelRequest={handleCancelRequest}
         />
+      )}
+
+      {/* ===== MODAL VIẾT ĐÁNH GIÁ (WRITE REVIEW MODAL) ===== */}
+      {reviewingTransaction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 animate-in fade-in duration-200">
+          <div className="bg-[#FAF9F6] w-full max-w-lg rounded-[2rem] p-6 sm:p-8 relative shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-gray-900 font-serif">Đánh giá kỳ nghỉ của bạn</h3>
+              <button 
+                onClick={() => setReviewingTransaction(null)}
+                className="p-1.5 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Hotel Name Info */}
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-6 shadow-sm">
+              <h4 className="font-bold text-gray-900 leading-snug">{reviewingTransaction.name}</h4>
+              <p className="text-gray-500 text-xs mt-1">Phòng đã ở: {reviewingTransaction.roomName}</p>
+              <p className="text-gray-400 text-[10px] mt-0.5">Thời gian lưu trú: {reviewingTransaction.dateRange}</p>
+            </div>
+
+            {/* 1. Chọn số sao */}
+            <div className="mb-6 text-center">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Đánh giá chung bằng số sao</label>
+              <div className="flex justify-center gap-1.5 mt-2">
+                {[1, 2, 3, 4, 5].map((star) => {
+                  const isFilled = reviewHoverStars > 0 ? star <= reviewHoverStars : star <= reviewStars;
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewStars(star)}
+                      onMouseEnter={() => setReviewHoverStars(star)}
+                      onMouseLeave={() => setReviewHoverStars(0)}
+                      className="p-1 hover:scale-125 transition-transform duration-150 cursor-pointer"
+                    >
+                      <Star 
+                        className={`w-9 h-9 ${
+                          isFilled ? 'text-amber-500 fill-amber-500' : 'text-gray-300'
+                        }`} 
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs font-semibold text-[#3F3D7C] mt-2 h-4">
+                {reviewStars === 5 && 'Tuyệt hảo! Không có gì để chê.'}
+                {reviewStars === 4 && 'Rất tốt! Trải nghiệm đáng nhớ.'}
+                {reviewStars === 3 && 'Bình thường! Có điểm cần cải thiện.'}
+                {reviewStars === 2 && 'Không tốt lắm! Dịch vụ chưa đạt.'}
+                {reviewStars === 1 && 'Tệ! Rất không hài lòng.'}
+              </p>
+            </div>
+
+            {/* 2. Nhập nhận xét */}
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Nhận xét chi tiết</label>
+              <textarea
+                className="w-full border border-gray-200 rounded-2xl p-4 text-sm focus:outline-none focus:border-[#3F3D7C] focus:ring-1 focus:ring-[#3F3D7C] resize-none bg-white text-gray-800 leading-relaxed"
+                rows={4}
+                maxLength={500}
+                placeholder="Khách sạn có gì nổi bật? Hãy chia sẻ trải nghiệm thực tế của bạn về phòng ốc, tiện nghi, dịch vụ ăn uống và thái độ phục vụ của nhân viên nhé..."
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+              />
+              <div className="text-right text-[10px] text-gray-400 mt-1 font-medium">
+                {reviewComment.length}/500 ký tự
+              </div>
+            </div>
+
+            {/* 3. Tải lên hình ảnh thực tế */}
+            <div className="mb-8">
+              <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-gray-400" />
+                Ảnh chụp thực tế kỳ nghỉ <span className="text-xs font-normal text-gray-400">(Tối đa 5 ảnh)</span>
+              </label>
+
+              {/* Nút upload hoặc danh sách ảnh */}
+              <div className="flex flex-wrap gap-3 mt-3">
+                {/* Thumbnails */}
+                {reviewImages.map((img, index) => (
+                  <div key={index} className="w-20 h-20 rounded-xl overflow-hidden relative border border-gray-150 shadow-sm flex-shrink-0 group">
+                    <img src={img} alt="preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-1 right-1 bg-black/60 hover:bg-black/85 text-white rounded-full p-0.5 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Upload Button */}
+                {reviewImages.length < 5 && (
+                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#3F3D7C] bg-white flex flex-col items-center justify-center cursor-pointer transition-colors group">
+                    <Camera className="w-5 h-5 text-gray-400 group-hover:text-[#3F3D7C] transition-colors" />
+                    <span className="text-[10px] text-gray-400 group-hover:text-[#3F3D7C] mt-1 font-bold">Thêm ảnh</span>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={handlePhotoUpload} 
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Nút bấm */}
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setReviewingTransaction(null)}
+                className="flex-1 py-4 rounded-xl border border-gray-250 text-gray-600 font-bold hover:bg-gray-50 transition-colors text-sm cursor-pointer"
+                disabled={isSubmittingReview}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleReviewSubmit}
+                className="flex-1 py-4 rounded-xl bg-[#3F3D7C] hover:bg-[#2d2a4a] text-white font-bold transition-all text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#3F3D7C]/20 disabled:opacity-50"
+                disabled={isSubmittingReview || !reviewComment.trim()}
+              >
+                {isSubmittingReview ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Đang gửi...
+                  </>
+                ) : (
+                  'Gửi đánh giá'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

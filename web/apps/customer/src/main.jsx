@@ -13,6 +13,8 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 // Import WishlistProvider - cung cấp context danh sách yêu thích cho toàn bộ ứng dụng
 import { WishlistProvider } from './context/WishlistContext'
+// Import BookingProvider - cung cấp context lưu trữ lịch sử đặt phòng cục bộ
+import { BookingProvider } from './context/BookingContext'
 
 // Khởi tạo ứng dụng React và render vào phần tử DOM có id="root"
 // StrictMode: Bọc ứng dụng để phát hiện lỗi tiềm ẩn khi phát triển
@@ -21,7 +23,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
       <WishlistProvider>
-        <App />
+        <BookingProvider>
+          <App />
+        </BookingProvider>
       </WishlistProvider>
     </AuthProvider>
   </StrictMode>,

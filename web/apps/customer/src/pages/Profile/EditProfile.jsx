@@ -6,6 +6,23 @@ import {
   User, Bell,
   Heart, Receipt, Settings, Camera
 } from 'lucide-react';
+import { authService } from '../../services/authService';
+
+const parseDateForInput = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3 && parts[0].length === 2) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY to YYYY-MM-DD
+  }
+  return dateStr;
+};
+
+const parseGenderForSelect = (genderStr) => {
+  if (genderStr === 'male') return 'Nam';
+  if (genderStr === 'female') return 'Nữ';
+  if (genderStr === 'other') return 'Khác';
+  return genderStr || '';
+};
 
 
 
@@ -15,12 +32,12 @@ const EditProfile = () => {
   const fileInputRef = useRef(null);
   const { toasts, removeToast, toast } = useToast();
 
-  const [avatarPreview, setAvatarPreview] = useState(user?.avatar || "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default");
+  const [avatarPreview, setAvatarPreview] = useState(user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default`);
 
   const [formData, setFormData] = useState({
-    fullName: user?.name || '',
-    dateOfBirth: user?.dateOfBirth || '',
-    gender: user?.gender || '',
+    fullName: user?.name || user?.fullName || '',
+    dateOfBirth: parseDateForInput(user?.dateOfBirth),
+    gender: parseGenderForSelect(user?.gender),
     email: user?.email || '',
     phone: user?.phone || '',
     address: user?.address || '',
@@ -78,20 +95,42 @@ const EditProfile = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (validateForm()) {
-      updateUser({
-        ...user,
-        name: formData.fullName,
-        dateOfBirth: formData.dateOfBirth,
-        gender: formData.gender,
-        email: formData.email,
-        phone: formData.phone,
-        address: formData.address,
-        avatar: formData.avatar,
-      });
-      toast.success('Cập nhật hồ sơ thành công!', 'Lưu thành công');
+      try {
+        const payload = {
+          fullName: formData.fullName,
+        };
+        if (formData.phone) payload.phone = formData.phone;
+
+        if (formData.dateOfBirth) {
+           const parts = formData.dateOfBirth.split('-');
+           if (parts.length === 3) {
+              payload.dateOfBirth = `${parts[2]}-${parts[1]}-${parts[0]}`;
+           }
+        }
+        if (formData.gender) {
+           payload.gender = formData.gender === 'Nam' ? 'male' : (formData.gender === 'Nữ' ? 'female' : 'other');
+        }
+
+        await authService.updateProfile(payload);
+
+        updateUser({
+          ...user,
+          name: formData.fullName,
+          fullName: formData.fullName,
+          dateOfBirth: payload.dateOfBirth || formData.dateOfBirth,
+          gender: payload.gender || formData.gender,
+          email: formData.email,
+          phone: formData.phone,
+          address: formData.address,
+          avatar: formData.avatar,
+        });
+        toast.success('Cập nhật hồ sơ thành công!', 'Lưu thành công');
+      } catch (err) {
+        toast.error('Có lỗi xảy ra khi lưu: ' + (err?.response?.data?.message || err.message), 'Lỗi');
+      }
     }
   };
 

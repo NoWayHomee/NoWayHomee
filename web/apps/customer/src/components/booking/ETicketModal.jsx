@@ -144,6 +144,22 @@ const ETicketModal = ({ transaction, onClose, onCancelRequest }) => {
               <p className="text-xs text-gray-400 mb-1">Phòng</p>
               <p className="font-bold text-gray-900">{transaction.rooms || '1 phòng'}</p>
             </div>
+            <div className="col-span-2 mt-2 pt-4 border-t border-gray-100 flex justify-between items-center text-sm">
+              <span className="text-gray-400 text-xs font-semibold">Thanh toán</span>
+              <span className="font-bold text-[#403B69] text-xs">
+                {transaction.paymentMethod === 'pay_later' 
+                  ? 'Trả sau (tại khách sạn)' 
+                  : transaction.paymentMethod === 'credit_card' 
+                  ? 'Thẻ tín dụng / Ghi nợ'
+                  : transaction.paymentMethod === 'momo'
+                  ? 'Ví điện tử MoMo'
+                  : transaction.paymentMethod === 'zalopay'
+                  ? 'Ví điện tử ZaloPay'
+                  : transaction.paymentMethod === 'bank_transfer'
+                  ? 'Chuyển khoản ngân hàng'
+                  : 'Đã thanh toán trực tuyến'}
+              </span>
+            </div>
           </div>
         </div>
 

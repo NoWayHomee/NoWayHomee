@@ -2599,7 +2599,6 @@
           "email",
           "password",
           "fullName",
-          "phone",
           "userType"
         ]
       },

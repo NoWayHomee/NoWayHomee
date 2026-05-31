@@ -2,7 +2,7 @@
 // Bao gồm: Header, Hero banner với thanh tìm kiếm, các section khuyến mãi, cẩm nang du lịch, Footer
 // Đây là trang đầu tiên người dùng nhìn thấy khi truy cập website
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useToast, ToastContainer } from '../../components/common/Toast';
 import { Link, useNavigate } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
@@ -14,12 +14,34 @@ import {
   Backpack, Luggage, Umbrella, Phone, Mail, ChevronRight, Star
 } from 'lucide-react';
 import AppDownloadCTA from '../../components/common/AppDownloadCTA';
+import { hotelService } from '../../services/hotelService';
 
 const Home = () => {
   // Lấy thông tin user đang đăng nhập từ AuthContext (null nếu chưa đăng nhập)
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toasts, removeToast, toast } = useToast();
+
+  // State cho danh sách khách sạn nổi bật (tải từ API)
+  const [featuredHotels, setFeaturedHotels] = useState([]);
+  const [hotelsLoading, setHotelsLoading] = useState(true);
+
+  // Fetch khách sạn nổi bật khi load trang
+  useEffect(() => {
+    const fetchFeatured = async () => {
+      try {
+        setHotelsLoading(true);
+        const res = await hotelService.searchHotels({ limit: 3, sort_by: 'highest_rating' });
+        const items = res.data?.data?.items || res.data?.items || [];
+        setFeaturedHotels(items.slice(0, 3));
+      } catch (err) {
+        console.error('Không thể tải khách sạn nổi bật:', err);
+      } finally {
+        setHotelsLoading(false);
+      }
+    };
+    fetchFeatured();
+  }, []);
 
   // === Các State quản lý thanh tìm kiếm ===
   // State lưu khoảng ngày đã chọn [ngày nhận phòng, ngày trả phòng]
@@ -366,61 +388,55 @@ const Home = () => {
         <section>
           <h2 className="text-3xl font-bold text-[#2a2456] mb-8">Khách sạn nổi bật</h2>
           <div className="relative">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {hotelsLoading ? (
+              <div className="flex justify-center items-center h-48">
+                <div className="w-10 h-10 border-4 border-[#403B69] border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            ) : featuredHotels.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {featuredHotels.map((hotel) => (
+                  <Link
+                    to={`/hotel/${hotel.slug}`}
+                    key={hotel.slug}
+                    className="bg-white border border-gray-100 rounded-2xl overflow-hidden group cursor-pointer shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col"
+                  >
+                    <div className="relative h-48 overflow-hidden">
+                      <img
+                        src={hotel.cover_image || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1000&auto=format&fit=crop'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        alt={hotel.name}
+                      />
+                    </div>
+                    <div className="p-5 flex-1 flex flex-col">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-gray-900 text-lg leading-snug line-clamp-2 pr-2">{hotel.name}</h3>
+                        <div className="flex items-center space-x-1 bg-yellow-50 px-2 py-1 rounded-md">
+                          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                          <span className="text-yellow-700 font-bold text-sm">{hotel.star_rating || hotel.avg_rating || 'N/A'}</span>
+                        </div>
+                      </div>
 
-              {[
-                {
-                  id: 1,
-                  name: "Khách sạn King's Trung Yên",
-                  location: "Hà Nội",
-                  rating: 8.4,
-                  price: "1.500.000",
-                  image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1000&auto=format&fit=crop"
-                },
-                {
-                  id: 2,
-                  name: "Melia Vinpearl Phu Quoc",
-                  location: "Phú Quốc",
-                  rating: 9.1,
-                  price: "2.800.000",
-                  image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=1000&auto=format&fit=crop"
-                },
-                {
-                  id: 3,
-                  name: "InterContinental Danang",
-                  location: "Đà Nẵng",
-                  rating: 9.5,
-                  price: "5.500.000",
-                  image: "https://images.unsplash.com/photo-1542314831-c6a4d14b8e8a?q=80&w=1000&auto=format&fit=crop"
-                }
-              ].map((hotel) => (
-                <Link to={`/hotel/${hotel.id}`} key={hotel.id} className="bg-white border border-gray-100 rounded-2xl overflow-hidden group cursor-pointer shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
-                  <div className="relative h-48 overflow-hidden">
-                    <img src={hotel.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={hotel.name} />
-                  </div>
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-gray-900 text-lg leading-snug line-clamp-2 pr-2">{hotel.name}</h3>
-                      <div className="flex items-center space-x-1 bg-yellow-50 px-2 py-1 rounded-md">
-                        <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                        <span className="text-yellow-700 font-bold text-sm">{hotel.rating}</span>
+                      <div className="flex items-center text-gray-500 text-sm mb-4">
+                        <MapPin className="w-4 h-4 mr-1" />
+                        <span>{hotel.city || hotel.address || 'Việt Nam'}</span>
+                      </div>
+
+                      <div className="mt-auto flex items-baseline">
+                        <span className="text-[#2a2456] font-bold text-2xl">
+                          {hotel.min_nightly_price
+                            ? hotel.min_nightly_price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+                            : 'Liên hệ'
+                          }đ
+                        </span>
+                        {hotel.min_nightly_price && <span className="text-gray-500 text-sm ml-1">/ đêm</span>}
                       </div>
                     </div>
-
-                    <div className="flex items-center text-gray-500 text-sm mb-4">
-                      <MapPin className="w-4 h-4 mr-1" />
-                      <span>{hotel.location}</span>
-                    </div>
-
-                    <div className="mt-auto flex items-baseline">
-                      <span className="text-[#2a2456] font-bold text-2xl">{hotel.price}đ</span>
-                      <span className="text-gray-500 text-sm ml-1">/ đêm</span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-
-            </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-center py-8">Hiện chưa có khách sạn nổi bật. Vui lòng quay lại sau.</p>
+            )}
 
             {/* Arrow Button */}
             <button className="absolute -right-5 top-1/2 -translate-y-1/2 w-10 h-10 bg-[#f4f4f4] rounded-full flex items-center justify-center shadow-md hover:bg-gray-200 hover:scale-110 transition-all z-10 hidden md:flex">
