@@ -4,6 +4,8 @@ build/
 coverage/
 .vite/
 **/.vite/
+uploads/
+**/uploads/
 
 .env
 .env.*

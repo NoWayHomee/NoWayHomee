@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../../../shared/components/ui";
 import { fetchBookingReport, markBookingPaid, cancelBooking, rejectCancelBooking } from "../../../../api/bookingsApi";
 import { approveRoom } from "../../../../api/roomsApi";
+import { useConfirmDialog } from "../../../../shared/components/ConfirmDialog";
+import { ADMIN_PORTAL_NAME } from "../../../../shared/config/pageTitles";
+import { usePageTitle } from "../../../../shared/hooks/usePageTitle";
 
 type BookingItem = {
   id: number;
@@ -506,6 +509,7 @@ function Stat({ label, value, tone, highlight }: { label: string; value: React.R
 }
 
 function BookingDetailModal({ hotel, onClose, onRefresh, onNavigateToRoom }: { hotel: HotelReport; onClose: () => void; onRefresh: () => void; onNavigateToRoom?: (hotelId: number) => void }) {
+  usePageTitle({ title: "Đặt phòng", entity: hotel.propertyName, portal: ADMIN_PORTAL_NAME });
   const [selectedSingle, setSelectedSingle] = useState<BookingItem | null>(null);
   const [activeTab, setActiveTab] = useState<"upcoming" | "current" | "completed" | "cancelled">("upcoming");
 
@@ -621,7 +625,9 @@ function BookingDetailModal({ hotel, onClose, onRefresh, onNavigateToRoom }: { h
 }
 
 function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: BookingItem; onClose: () => void; onRefresh: () => void }) {
+  usePageTitle({ title: "Đơn đặt phòng", entity: booking.bookingCode, portal: ADMIN_PORTAL_NAME });
   const [loading, setLoading] = useState(false);
+  const { confirm, confirmDialog } = useConfirmDialog();
   const isCancelled = booking.status === 'cancelled';
   const isPaidOnline = booking.paymentStatus === 'paid';
   const isPendingCancel = booking.cancellationReason && booking.cancellationReason.startsWith("PENDING_CANCEL");
@@ -646,7 +652,13 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
   const paymentMethod = isCancelled ? `${initialMethod} (Đơn đã hủy)` : (isPaidOnline ? initialMethod : (booking.status === 'confirmed' || booking.isCompleted ? 'Tiền mặt / Quẹt thẻ (Tại khách sạn)' : 'Chưa xác định'));
 
   async function handleAction(action: string) {
-    if (!confirm(`Xác nhận thực hiện: ${action}?`)) return;
+    const ok = await confirm({
+      title: "Xác nhận thao tác booking",
+      message: `Bạn muốn thực hiện thao tác "${action}" cho đơn ${booking.bookingCode}?`,
+      confirmText: "Thực hiện",
+      tone: action === "cancel" ? "danger" : "default",
+    });
+    if (!ok) return;
     setLoading(true);
     try {
       if (action === 'confirm_payment') {
@@ -816,6 +828,7 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
           </button>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

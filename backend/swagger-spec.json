@@ -1117,6 +1117,20 @@
         ]
       }
     },
+    "/api/account/avatar": {
+      "post": {
+        "operationId": "CompatController_uploadAccountAvatar",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Compat"
+        ]
+      }
+    },
     "/api/partner/apply": {
       "post": {
         "operationId": "CompatController_applyPartner",

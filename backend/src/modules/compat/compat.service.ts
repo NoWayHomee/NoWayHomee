@@ -76,7 +76,7 @@ export class CompatService {
     const primaryProperty = dbUser.partnerProfile?.properties[0] ?? null;
     const isPartner = dbUser.userType === user_type_enum.partner;
     const isAdmin = dbUser.userType === user_type_enum.admin;
-    const isSuperAdmin = this.isSuperAdminEmail(dbUser.email);
+    const isSuperAdmin = dbUser.isSuperAdmin;
 
     return {
       profile: {
@@ -149,6 +149,48 @@ export class CompatService {
     return { signature, timestamp, cloudName, apiKey, folder };
   }
 
+  async updateAccountAvatar(user: AuthenticatedUser, file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Vui lòng chọn file ảnh đại diện');
+
+    const avatarUrl = `/api/uploads/avatars/${file.filename}`;
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: BigInt(user.id) },
+      select: { avatarUrl: true },
+    });
+    if (!currentUser) {
+      await this.deleteLocalAvatar(avatarUrl);
+      throw new NotFoundException('Khong tim thay tai khoan');
+    }
+
+    let updated;
+    try {
+      updated = await this.prisma.user.update({
+        where: { id: BigInt(user.id) },
+        data: { avatarUrl },
+      });
+    } catch (error) {
+      await this.deleteLocalAvatar(avatarUrl);
+      throw error;
+    }
+
+    await this.deletePreviousAvatar(currentUser.avatarUrl, avatarUrl);
+
+    return {
+      avatarUrl: updated.avatarUrl,
+      user: {
+        id: Number(updated.id),
+        email: updated.email,
+        fullName: updated.fullName,
+        phone: updated.phone,
+        avatarUrl: updated.avatarUrl,
+        role: updated.userType,
+        title: updated.isSuperAdmin ? 'Admin tổng' : updated.userType === user_type_enum.admin ? 'Quản trị viên' : 'Đối tác',
+        isSuperAdmin: updated.isSuperAdmin,
+        status: updated.status,
+      },
+    };
+  }
+
   async updateAccountProfile(user: AuthenticatedUser, body: AnyBody) {
     const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
     const phone = typeof body.phone === 'string' ? body.phone.trim() : undefined;
@@ -188,8 +230,8 @@ export class CompatService {
         phone: updated.phone,
         avatarUrl: updated.avatarUrl,
         role: updated.userType,
-        title: this.isSuperAdminEmail(updated.email) ? 'Admin tổng' : 'Quản trị viên',
-        isSuperAdmin: this.isSuperAdminEmail(updated.email),
+        title: updated.isSuperAdmin ? 'Admin tổng' : 'Quản trị viên',
+        isSuperAdmin: updated.isSuperAdmin,
         status: updated.status,
       },
     };
@@ -525,7 +567,7 @@ export class CompatService {
         id: admin.id,
         email: admin.email,
         fullName: admin.fullName,
-        isSuperAdmin: this.isSuperAdminEmail(admin.email),
+        isSuperAdmin: admin.isSuperAdmin,
         loginMethods: [admin.passwordHash ? 'password' : null, 'google'].filter(Boolean),
         createdAt: admin.createdAt,
       })),
@@ -1277,11 +1319,46 @@ export class CompatService {
 
   private isSuperAdminEmail(email: string): boolean {
     const normalized = email.trim().toLowerCase();
-    const emails = (this.configService.get<string>('SUPER_ADMIN_EMAILS') ?? 'nguyenducmanh.ovaltine@gmail.com')
+    const emails = (this.configService.get<string>('SUPER_ADMIN_EMAILS') ?? '')
       .split(',')
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
     return emails.includes(normalized);
+  }
+
+  private async isSuperAdminUser(user: AuthenticatedUser): Promise<boolean> {
+    if (user.isSuperAdmin) return true;
+
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: BigInt(user.id) },
+      select: { id: true, email: true, isSuperAdmin: true },
+    });
+
+    if (!dbUser) return false;
+    if (dbUser.isSuperAdmin) return true;
+
+    if (this.isSuperAdminEmail(dbUser.email)) {
+      await this.prisma.user.update({
+        where: { id: dbUser.id },
+        data: { isSuperAdmin: true },
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  private parsePositiveAmount(value: unknown, label = 'So tien'): number {
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException(`${label} phai la so duong`);
+    }
+    return Math.round(amount);
+  }
+
+  private parseTransactionType(value: unknown): 'DEPOSIT' | 'WITHDRAW' {
+    if (value === 'DEPOSIT' || value === 'WITHDRAW') return value;
+    throw new BadRequestException('Loai giao dich khong hop le');
   }
 
   private async syntheticNotifications(user: AuthenticatedUser) {
@@ -1624,27 +1701,64 @@ export class CompatService {
 
   private normalizeRoomPayload(body: AnyBody) {
     const prices = Array.isArray(body.prices) ? (body.prices as AnyBody[]) : [];
-    const firstPrice = prices[0] ?? {};
+    if (!prices.length) {
+      throw new BadRequestException('Can it nhat mot hang phong hop le');
+    }
     const roomTypeText = this.text(body.roomType, '');
-    return {
-      name: this.text(body.name, 'Khach san moi'),
-      description: typeof body.description === 'string' ? body.description : null,
-      address: this.text(body.address, ''),
-      city: this.text(body.city, ''),
-      latitude: Number(body.latitude ?? 10.7769),
-      longitude: Number(body.longitude ?? 106.7009),
-      propertyType: this.propertyTypeFromText(roomTypeText),
-      starRating: this.starFromText(roomTypeText),
-      prices: (prices.length ? prices : [firstPrice]).map((price, index) => ({
-        label: this.text(price.label, `Phong ${index + 1}`),
-        pricePerNight: Number(price.pricePerNight ?? 0),
-        totalInventory: Number(price.totalInventory ?? 1),
-        area: this.optionalNumber(price.area),
-        capacity: Number(price.capacity ?? body.capacity ?? 2),
+    const name = this.text(body.name, '').trim();
+    const address = this.text(body.address, '').trim();
+    const city = this.text(body.city, '').trim();
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    if (!name) throw new BadRequestException('Ten khach san la bat buoc');
+    if (!address) throw new BadRequestException('Dia chi khach san la bat buoc');
+    if (!city) throw new BadRequestException('Thanh pho la bat buoc');
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      throw new BadRequestException('Vi do khong hop le');
+    }
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      throw new BadRequestException('Kinh do khong hop le');
+    }
+    const normalizedPrices = prices.map((price, index) => {
+      const label = this.text(price.label, '').trim();
+      const pricePerNight = Number(price.pricePerNight);
+      const totalInventory = Number(price.totalInventory ?? 1);
+      const capacity = Number(price.capacity ?? body.capacity ?? 2);
+      const area = this.optionalNumber(price.area);
+      if (!label) throw new BadRequestException(`Ten hang phong #${index + 1} la bat buoc`);
+      if (!Number.isFinite(pricePerNight) || pricePerNight <= 0) {
+        throw new BadRequestException(`Gia hang phong #${index + 1} khong hop le`);
+      }
+      if (!Number.isInteger(totalInventory) || totalInventory <= 0) {
+        throw new BadRequestException(`So phong phuc vu/ngay cua hang phong #${index + 1} khong hop le`);
+      }
+      if (!Number.isInteger(capacity) || capacity <= 0) {
+        throw new BadRequestException(`Suc chua hang phong #${index + 1} khong hop le`);
+      }
+      if (area !== null && (!Number.isFinite(area) || area <= 0)) {
+        throw new BadRequestException(`Dien tich hang phong #${index + 1} khong hop le`);
+      }
+      return {
+        label,
+        pricePerNight,
+        totalInventory,
+        area,
+        capacity,
         bedInfo: typeof price.bedInfo === 'string' ? price.bedInfo : null,
         imageUrls: Array.isArray(price.imageUrls) ? price.imageUrls.map(u => String(u).trim()).filter(Boolean) : [],
         amenities: typeof price.amenities === 'string' ? price.amenities : '',
-      })),
+      };
+    });
+    return {
+      name,
+      description: typeof body.description === 'string' ? body.description : null,
+      address,
+      city,
+      latitude,
+      longitude,
+      propertyType: this.propertyTypeFromText(roomTypeText),
+      starRating: this.starFromText(roomTypeText),
+      prices: normalizedPrices,
       policy: {
         refundable: ((body.policy as AnyBody | undefined)?.refundable ?? true) as boolean,
       },
@@ -2537,6 +2651,23 @@ export class CompatService {
     const initialBalance = Number(systemInfo.initialBalance || 1125230);
     const systemDepositsAndWithdrawals = systemInfo.depositsAndWithdrawals || [];
     const paidTaxes = systemInfo.paidTaxes || [];
+    const systemBankAccountNumber = '110011011102';
+    const systemBankName = 'Vietcombank';
+    const openingBalanceTransaction =
+      initialBalance > 0
+        ? {
+            id: 'SYS-OPENING-BALANCE',
+            type: 'DEPOSIT',
+            amount: initialBalance,
+            targetBank: systemBankName,
+            targetAccount: systemBankAccountNumber,
+            targetHolder: 'Admin tổng',
+            status: 'SUCCESS',
+            createdAt: systemInfo.initialBalanceCreatedAt || '2026-03-01T00:00:00.000Z',
+            description: 'Nạp số dư ban đầu',
+            isOpeningBalance: true,
+          }
+        : null;
 
     let systemDepositsSum = 0;
     let systemWithdrawalsSum = 0;
@@ -2608,12 +2739,14 @@ export class CompatService {
       transactions,
       partners,
       system: {
-        bankAccountNumber: '110011011102',
-        bankName: 'Vietcombank',
+        bankAccountNumber: systemBankAccountNumber,
+        bankName: systemBankName,
         initialBalance,
         platformFeeRevenue,
         balance: systemBalance,
-        depositsAndWithdrawals: systemDepositsAndWithdrawals,
+        depositsAndWithdrawals: openingBalanceTransaction
+          ? [openingBalanceTransaction, ...systemDepositsAndWithdrawals]
+          : systemDepositsAndWithdrawals,
         paidTaxes,
         monthlyTaxes,
       },
@@ -2621,10 +2754,12 @@ export class CompatService {
   }
 
   async addSystemTransaction(user: AuthenticatedUser, body: Record<string, unknown>) {
-    const isSuperAdmin = this.isSuperAdminEmail(user.email);
+    const isSuperAdmin = await this.isSuperAdminUser(user);
     if (!isSuperAdmin) {
       throw new ForbiddenException('Chi co admin tong moi duoc phep thao tac nap/rut tai khoan he thong');
     }
+    const type = this.parseTransactionType(body.type);
+    const amount = this.parsePositiveAmount(body.amount);
 
     const db = this.readPayDb();
     if (!db.system) {
@@ -2633,8 +2768,8 @@ export class CompatService {
 
     const newTx = {
       id: `SYS-TX-${Math.floor(100000 + Math.random() * 900000)}`,
-      type: body.type,
-      amount: Number(body.amount),
+      type,
+      amount,
       targetBank: body.targetBank || 'Vietcombank',
       targetAccount: body.targetAccount || '110011011102',
       targetHolder: body.targetHolder || 'Company Account',
@@ -2648,7 +2783,7 @@ export class CompatService {
   }
 
   async paySystemTax(user: AuthenticatedUser, body: Record<string, unknown>) {
-    const isSuperAdmin = this.isSuperAdminEmail(user.email);
+    const isSuperAdmin = await this.isSuperAdminUser(user);
     if (!isSuperAdmin) {
       throw new ForbiddenException('Chi co admin tong moi duoc phep dong thue');
     }
@@ -2659,7 +2794,7 @@ export class CompatService {
     }
 
     const month = body.month as string;
-    const amount = Number(body.amount);
+    const amount = this.parsePositiveAmount(body.amount, 'So tien thue');
 
     const existing = db.system.paidTaxes.find((t: any) => t.month === month);
     if (existing) {
@@ -2678,6 +2813,10 @@ export class CompatService {
   }
 
   async addPartnerTransaction(user: AuthenticatedUser, body: Record<string, unknown>) {
+    const isSuperAdmin = await this.isSuperAdminUser(user);
+    if (!isSuperAdmin) {
+      throw new ForbiddenException('Chi co admin tong moi duoc phep nap/rut vi doi tac');
+    }
     const db = this.readPayDb();
     const partnerIdStr = body.partnerId as string;
     
@@ -2689,10 +2828,13 @@ export class CompatService {
       db.partners[partnerIdStr].partnerDepositsAndWithdrawals = [];
     }
 
+    const type = this.parseTransactionType(body.type);
+    const amount = this.parsePositiveAmount(body.amount);
+
     const newTx = {
       id: `PART-TX-${Math.floor(100000 + Math.random() * 900000)}`,
-      type: body.type,
-      amount: Number(body.amount),
+      type,
+      amount,
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
     };
@@ -2714,11 +2856,19 @@ export class CompatService {
     if (!db.partners[partnerIdStr].partnerDepositsAndWithdrawals) {
       db.partners[partnerIdStr].partnerDepositsAndWithdrawals = [];
     }
+    const type = this.parseTransactionType(body.type);
+    const amount = this.parsePositiveAmount(body.amount);
+    if (type === 'WITHDRAW') {
+      const status = await this.getNowayhomePayStatus(user);
+      if (amount > Number(status.walletBalance || 0)) {
+        throw new BadRequestException('So du vi khong du de rut tien');
+      }
+    }
 
     const newTx = {
       id: `PART-TX-${Math.floor(100000 + Math.random() * 900000)}`,
-      type: body.type,
-      amount: Number(body.amount),
+      type,
+      amount,
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
     };
@@ -2726,5 +2876,48 @@ export class CompatService {
     db.partners[partnerIdStr].partnerDepositsAndWithdrawals.push(newTx);
     this.writePayDb(db);
     return { success: true, transaction: newTx };
+  }
+
+  private async deletePreviousAvatar(previousUrl?: string | null, nextUrl?: string | null) {
+    if (!previousUrl || previousUrl === nextUrl) return;
+    await this.deleteLocalAvatar(previousUrl);
+    await this.deleteCloudinaryAvatar(previousUrl);
+  }
+
+  private async deleteLocalAvatar(avatarUrl?: string | null) {
+    if (!avatarUrl?.startsWith('/api/uploads/avatars/')) return;
+
+    const avatarsDirectory = path.resolve(process.cwd(), 'uploads', 'avatars');
+    const fileName = path.basename(avatarUrl);
+    const filePath = path.resolve(avatarsDirectory, fileName);
+    if (!filePath.startsWith(`${avatarsDirectory}${path.sep}`)) return;
+
+    await fs.promises.unlink(filePath).catch(() => undefined);
+  }
+
+  private async deleteCloudinaryAvatar(avatarUrl?: string | null) {
+    if (!avatarUrl || !avatarUrl.includes('/nowayhome/avatars/')) return;
+
+    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME') ?? '';
+    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY') ?? '';
+    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET') ?? '';
+    if (!cloudName || !apiKey || !apiSecret) return;
+
+    const publicId = this.extractCloudinaryPublicId(avatarUrl);
+    if (!publicId) return;
+
+    cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret });
+    await cloudinary.uploader.destroy(publicId, { resource_type: 'image' }).catch(() => undefined);
+  }
+
+  private extractCloudinaryPublicId(avatarUrl: string) {
+    const uploadMarker = '/upload/';
+    const uploadIndex = avatarUrl.indexOf(uploadMarker);
+    if (uploadIndex === -1) return null;
+
+    let publicPath = avatarUrl.slice(uploadIndex + uploadMarker.length).split(/[?#]/)[0];
+    publicPath = publicPath.replace(/^v\d+\//, '');
+    const extension = path.extname(publicPath);
+    return extension ? publicPath.slice(0, -extension.length) : publicPath;
   }
 }

@@ -55,9 +55,11 @@ export const useAuth = () => {
       navigate("/login");
     };
     window.addEventListener("nowayhome:auth-error", handleAuthError);
+    window.addEventListener("nowayhome:user-updated", check);
     return () => {
       clearInterval(timer);
       window.removeEventListener("nowayhome:auth-error", handleAuthError);
+      window.removeEventListener("nowayhome:user-updated", check);
     };
   }, []);
 

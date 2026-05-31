@@ -28,6 +28,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   userType: user_type_enum;
+  isSuperAdmin?: boolean;
 }
 
 export type SafeUser = Omit<User, 'passwordHash' | 'deletedAt'>;
@@ -122,7 +123,9 @@ export class AuthService {
     loginDto: LoginDto,
     loginContext: LoginContext,
   ): Promise<LoginResponse> {
-    const user = await this.validateUser(loginDto.email, loginDto.password);
+    const user = await this.ensureBootstrapSuperAdmin(
+      await this.validateUser(loginDto.email, loginDto.password),
+    );
 
     const temporaryTokenHash = await bcrypt.hash(randomUUID(), this.saltRounds);
     const session = await this.prisma.userSession.create({
@@ -161,7 +164,7 @@ export class AuthService {
         role: user.userType,
         status: user.status,
         userType: user.userType,
-        isSuperAdmin: this.isSuperAdminEmail(user.email),
+        isSuperAdmin: user.isSuperAdmin,
       },
     };
   }
@@ -185,9 +188,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    if (user.userType === user_type_enum.partner) {
+    const effectiveUser = await this.ensureBootstrapSuperAdmin(user);
+
+    if (effectiveUser.userType === user_type_enum.partner) {
       const partner = await this.prisma.partnerProfile.findUnique({
-        where: { userId: user.id },
+        where: { userId: effectiveUser.id },
       });
       if (partner) {
         if (partner.kycStatus === kyc_status_enum.pending) {
@@ -199,7 +204,7 @@ export class AuthService {
       }
     }
 
-    return user;
+    return effectiveUser;
   }
 
   async refresh(refreshTokenDto: RefreshTokenDto): Promise<RefreshResponse> {
@@ -317,6 +322,7 @@ export class AuthService {
       sub: user.id.toString(),
       email: user.email,
       userType: user.userType,
+      isSuperAdmin: user.isSuperAdmin,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -408,6 +414,7 @@ export class AuthService {
       fullName: user.fullName,
       avatarUrl: user.avatarUrl,
       userType: user.userType,
+      isSuperAdmin: user.isSuperAdmin,
       status: user.status,
       emailVerifiedAt: user.emailVerifiedAt,
       lastLoginAt: user.lastLoginAt,
@@ -418,10 +425,11 @@ export class AuthService {
   }
 
   async getUserById(id: string | number | bigint): Promise<SafeUser | null> {
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { id: BigInt(id) },
     });
     if (!user) return null;
+    user = await this.ensureBootstrapSuperAdmin(user);
 
     if (user.userType === user_type_enum.partner) {
       const partner = await this.prisma.partnerProfile.findUnique({
@@ -508,7 +516,7 @@ export class AuthService {
         role: updatedUser.userType,
         status: updatedUser.status,
         userType: updatedUser.userType,
-        isSuperAdmin: this.isSuperAdminEmail(updatedUser.email),
+        isSuperAdmin: updatedUser.isSuperAdmin,
       },
     };
   }
@@ -614,9 +622,11 @@ export class AuthService {
       return dbUser;
     });
 
-    if (user.userType === user_type_enum.partner) {
+    const effectiveUser = await this.ensureBootstrapSuperAdmin(user);
+
+    if (effectiveUser.userType === user_type_enum.partner) {
       const partner = await this.prisma.partnerProfile.findUnique({
-        where: { userId: user.id },
+        where: { userId: effectiveUser.id },
       });
       if (partner) {
         if (partner.kycStatus === kyc_status_enum.pending) {
@@ -632,7 +642,7 @@ export class AuthService {
     const temporaryTokenHash = await bcrypt.hash(randomUUID(), this.saltRounds);
     const session = await this.prisma.userSession.create({
       data: {
-        userId: user.id,
+        userId: effectiveUser.id,
         tokenHash: temporaryTokenHash,
         deviceType: device_type_enum.web,
         ipAddress: loginContext.ipAddress,
@@ -642,7 +652,7 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user);
+    const tokens = await this.generateTokens(effectiveUser);
     const refreshTokenHash = await bcrypt.hash(tokens.refreshToken, this.saltRounds);
 
     await this.prisma.userSession.update({
@@ -653,14 +663,14 @@ export class AuthService {
     return {
       ...tokens,
       user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        phone: user.phone,
-        role: user.userType,
-        status: user.status,
-        userType: user.userType,
-        isSuperAdmin: this.isSuperAdminEmail(user.email),
+        id: effectiveUser.id,
+        email: effectiveUser.email,
+        fullName: effectiveUser.fullName,
+        phone: effectiveUser.phone,
+        role: effectiveUser.userType,
+        status: effectiveUser.status,
+        userType: effectiveUser.userType,
+        isSuperAdmin: effectiveUser.isSuperAdmin,
       },
     };
   }
@@ -712,11 +722,22 @@ export class AuthService {
 
   isSuperAdminEmail(email: string): boolean {
     const normalized = email.trim().toLowerCase();
-    const emails = (this.configService.get<string>('SUPER_ADMIN_EMAILS') ?? 'nguyenducmanh.ovaltine@gmail.com')
+    const emails = (this.configService.get<string>('SUPER_ADMIN_EMAILS') ?? '')
       .split(',')
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
     return emails.includes(normalized);
+  }
+
+  private async ensureBootstrapSuperAdmin(user: User): Promise<User> {
+    if (user.isSuperAdmin || !this.isSuperAdminEmail(user.email)) {
+      return user;
+    }
+
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { isSuperAdmin: true },
+    });
   }
 
   private async resolveGoogleRole(email: string): Promise<user_type_enum> {

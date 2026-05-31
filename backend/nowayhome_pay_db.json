@@ -1,3 +1,11 @@
 {
-  "partners": {}
+  "partners": {
+    "4": {
+      "registered": true,
+      "bankName": "Vietcombank",
+      "bankAccountNumber": "39845934875",
+      "bankAccountHolder": "NGUYEN DUC MANH",
+      "virtualCustomerAccountNumber": "NWH-PAY-136705"
+    }
+  }
 }
