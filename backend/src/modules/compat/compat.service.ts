@@ -853,6 +853,106 @@ export class CompatService {
     return { ok: true };
   }
 
+  async adminCancelBooking(id: string) {
+    const bookingId = this.parseId(id, 'Ma booking khong hop le');
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        property: {
+          include: {
+            policy: true,
+          },
+        },
+      },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Khong tim thay dat phong');
+    }
+
+    if (
+      booking.status === booking_status_enum.cancelled ||
+      booking.status === booking_status_enum.checked_out
+    ) {
+      throw new BadRequestException('Booking da bi huy hoac check-out');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: booking_status_enum.cancelled,
+          cancelledAt: new Date(),
+          cancellationReason: booking.cancellationReason?.startsWith('PENDING_CANCEL')
+            ? `Yêu cầu hủy được duyệt: ${booking.cancellationReason.replace('PENDING_CANCEL:', '').trim()}`
+            : 'Admin huy don hang',
+        },
+      });
+
+      // Restore availability
+      const inventoryRows = await tx.$queryRaw<Array<{ ratePlanId: bigint; roomsCount: bigint }>>`
+        SELECT
+          rate_plan_id AS "ratePlanId",
+          COUNT(*)::bigint AS "roomsCount"
+        FROM booking_rooms
+        WHERE booking_id = ${booking.id}
+        GROUP BY rate_plan_id
+      `;
+
+      for (const inventoryRow of inventoryRows) {
+        await tx.dailyRate.updateMany({
+          where: {
+            ratePlanId: inventoryRow.ratePlanId,
+            date: {
+              gte: booking.checkInDate,
+              lt: booking.checkOutDate,
+            },
+          },
+          data: {
+            availableQty: {
+              increment: Number(inventoryRow.roomsCount),
+            },
+          },
+        });
+      }
+    });
+
+    return { ok: true };
+  }
+
+  async adminMarkBookingPaid(id: string) {
+    const bookingId = this.parseId(id, 'Ma booking khong hop le');
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundException('Khong tim thay dat phong');
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        paymentStatus: payment_status_enum.paid,
+        status: booking_status_enum.confirmed,
+      },
+    });
+    return { ok: true };
+  }
+
+  async adminRejectBookingCancel(id: string) {
+    const bookingId = this.parseId(id, 'Ma booking khong hop le');
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundException('Khong tim thay dat phong');
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        cancellationReason: booking.cancellationReason?.startsWith('PENDING_CANCEL')
+          ? `Từ chối hủy: ${booking.cancellationReason.replace('PENDING_CANCEL:', '').trim()}`
+          : null,
+      },
+    });
+    return { ok: true };
+  }
+
   async mine(user: AuthenticatedUser) {
     const bookings = await this.prisma.booking.findMany({
       where: { customerId: this.parseId(user.id, 'Ma nguoi dung khong hop le') },

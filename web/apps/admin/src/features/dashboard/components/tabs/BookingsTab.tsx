@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../../../shared/components/ui";
-import { fetchBookingReport, markBookingPaid, cancelBooking } from "../../../../api/bookingsApi";
+import { fetchBookingReport, markBookingPaid, cancelBooking, rejectCancelBooking } from "../../../../api/bookingsApi";
 import { approveRoom } from "../../../../api/roomsApi";
 
 type BookingItem = {
@@ -624,6 +624,7 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
   const [loading, setLoading] = useState(false);
   const isCancelled = booking.status === 'cancelled';
   const isPaidOnline = booking.paymentStatus === 'paid';
+  const isPendingCancel = booking.cancellationReason && booking.cancellationReason.startsWith("PENDING_CANCEL");
   
   let displayPaymentStatus = '';
   let statusColor = 'text-amber-600';
@@ -652,6 +653,8 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
         await markBookingPaid(booking.id);
       } else if (action === 'cancel') {
         await cancelBooking(booking.id);
+      } else if (action === 'reject_cancel') {
+        await rejectCancelBooking(booking.id);
       }
       onRefresh();
       onClose();
@@ -678,6 +681,15 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
         </div>
         
         <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+          {isPendingCancel && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-900 space-y-1 animate-in fade-in duration-200">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <svg className="size-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                Khách hàng yêu cầu hủy đặt phòng
+              </div>
+              <div>Lý do: <span className="italic font-medium">"{booking.cancellationReason?.replace('PENDING_CANCEL:', '').trim()}"</span></div>
+            </div>
+          )}
           <div className={`space-y-5 ${isCancelled ? 'opacity-60' : ''}`}>
             <section className="space-y-2">
               <div className="text-[11px] font-bold uppercase text-muted-foreground tracking-wider">Thông tin khách hàng</div>
@@ -757,22 +769,43 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
             <section className="space-y-2">
               <div className="text-[11px] font-bold uppercase text-muted-foreground tracking-wider">Hành động Admin</div>
               <div className="grid grid-cols-2 gap-2">
-                {!isPaidOnline && (
-                  <button 
-                    disabled={loading}
-                    onClick={() => handleAction('confirm_payment')}
-                    className="py-2 text-xs font-bold border rounded hover:bg-green-50 text-green-700 border-green-200 transition-colors"
-                  >
-                    Xác nhận thanh toán
-                  </button>
+                {isPendingCancel ? (
+                  <>
+                    <button 
+                      disabled={loading}
+                      onClick={() => handleAction('cancel')}
+                      className="py-2 text-xs font-bold border rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
+                    >
+                      Duyệt hủy
+                    </button>
+                    <button 
+                      disabled={loading}
+                      onClick={() => handleAction('reject_cancel')}
+                      className="py-2 text-xs font-bold border rounded hover:bg-slate-50 text-slate-700 border-slate-300 transition-colors"
+                    >
+                      Từ chối hủy
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {!isPaidOnline && (
+                      <button 
+                        disabled={loading}
+                        onClick={() => handleAction('confirm_payment')}
+                        className="py-2 text-xs font-bold border rounded hover:bg-green-50 text-green-700 border-green-200 transition-colors"
+                      >
+                        Xác nhận thanh toán
+                      </button>
+                    )}
+                    <button 
+                      disabled={loading}
+                      onClick={() => handleAction('cancel')}
+                      className="py-2 text-xs font-bold border rounded hover:bg-red-50 text-red-700 border-red-200 transition-colors"
+                    >
+                      Hủy đơn hàng
+                    </button>
+                  </>
                 )}
-                <button 
-                  disabled={loading}
-                  onClick={() => handleAction('cancel')}
-                  className="py-2 text-xs font-bold border rounded hover:bg-red-50 text-red-700 border-red-200 transition-colors"
-                >
-                  Hủy đơn hàng
-                </button>
               </div>
             </section>
           )}
