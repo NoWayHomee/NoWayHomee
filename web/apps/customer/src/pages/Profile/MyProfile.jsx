@@ -72,7 +72,7 @@ const MyProfile = () => {
           <div className="w-full lg:w-[380px] bg-white rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-100 p-8 flex flex-col items-center">
             <div className="w-32 h-32 rounded-full overflow-hidden mb-6 bg-blue-50 border-4 border-gray-50 shadow-inner">
               <img 
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default" 
+                src={user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default`} 
                 alt="Avatar" 
                 className="w-full h-full object-cover"
               />

@@ -61,7 +61,7 @@ const WishList = () => {
             <div className="flex items-center gap-3 mb-5">
               <div className="w-12 h-12 shrink-0 rounded-full overflow-hidden bg-gray-100">
                 <img
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default"
+                  src={user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}&hair=shortCombover&beard=medium&eyebrows=default&eyes=default&mouth=default`}
                   alt="Avatar"
                   className="w-full h-full object-cover"
                 />

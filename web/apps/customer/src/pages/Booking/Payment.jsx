@@ -8,9 +8,10 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   User, Bell, CreditCard, Wallet, Landmark,
   X, CheckCircle, Calendar, Users, ShieldCheck,
-  ChevronRight, MapPin, Ticket, Home
+  ChevronRight, MapPin, Ticket, Home, Clock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useBooking } from '../../context/BookingContext';
 import qrCodeImg from '../../assets/images/qr-code.png';
 import ETicketModal from '../../components/booking/ETicketModal';
 
@@ -18,6 +19,7 @@ const Payment = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { addBooking } = useBooking();
   const { toasts, removeToast, toast } = useToast();
 
   useEffect(() => {
@@ -72,6 +74,8 @@ const Payment = () => {
   const [showETicket, setShowETicket] = useState(false);
   // State trạng thái của E-Ticket (để demo Hủy phòng)
   const [ticketStatus, setTicketStatus] = useState('success');
+  // State lưu thông tin đơn hàng vừa tạo thành công
+  const [newOrder, setNewOrder] = useState(null);
 
   // === Tính toán chi phí ===
   const serviceFee = 1200000;  // Phí dịch vụ cố định
@@ -152,6 +156,15 @@ const Payment = () => {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
+      // Lưu vào BookingContext
+      const createdBooking = addBooking({
+        name: hotel.name,
+        roomName: currentRoomName,
+        dateRange: `${formatDateWithSlash(bookingData.startDate)} - ${formatDateWithSlash(bookingData.endDate)}`,
+        price: formatPriceVND(total),
+        paymentMethod: paymentMethod
+      });
+      setNewOrder(createdBooking);
       setShowSuccessModal(true);
     } else {
       toast.error('Vui lòng kiểm tra lại thông tin thanh toán!', 'Thông tin chưa đầy đủ');
@@ -283,7 +296,35 @@ const Payment = () => {
                   selected={paymentMethod === 'bank_transfer'}
                   onClick={() => setPaymentMethod('bank_transfer')}
                 />
+                <PaymentOption
+                  id="pay_later"
+                  label="Thanh toán trả sau (tại khách sạn)"
+                  sublabel="Thanh toán trực tiếp bằng tiền mặt hoặc thẻ khi nhận phòng"
+                  icon={<Clock className="w-5 h-5" />}
+                  selected={paymentMethod === 'pay_later'}
+                  onClick={() => setPaymentMethod('pay_later')}
+                />
               </div>
+
+              {/* --- Thông tin Thanh toán trả sau (chỉ hiện khi chọn pay_later) --- */}
+              {paymentMethod === 'pay_later' && (
+                <div className="mt-8 p-6 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-purple-50/50 to-pink-50/30 border border-indigo-100 shadow-sm flex items-start gap-4 animate-fadeIn">
+                  <div className="p-3 bg-[#403B69]/10 text-[#403B69] rounded-xl flex-shrink-0">
+                    <Clock className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-[#403B69] text-base mb-1">Xác nhận đặt phòng & Trả sau</h3>
+                    <p className="text-gray-700 text-sm leading-relaxed">
+                      Bạn có thể hoàn tất thủ tục đặt phòng ngay bây giờ mà không cần thanh toán trực tuyến.
+                      Tổng số tiền <span className="font-bold text-[#403B69]">{formatPrice(total)}</span> sẽ được thanh toán trực tiếp tại quầy lễ tân của <span className="font-semibold text-gray-900">{hotel.name}</span> khi bạn đến nhận phòng.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-[#3F3D7C] font-semibold">
+                      <ShieldCheck className="w-4 h-4" />
+                      Không cần thẻ tín dụng • Xác nhận đặt phòng ngay lập tức • Hủy phòng linh hoạt
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* --- Form nhập thẻ tín dụng (chỉ hiện khi chọn credit_card) ---
                   Gồm: Số thẻ, Ngày hết hạn, CVV, Tên trên thẻ */}
@@ -471,7 +512,7 @@ const Payment = () => {
                 Đặt phòng thành công!
               </h2>
               <p className="text-gray-700 text-sm">
-                Mã đặt phòng: <span className="font-medium">#NWH-MPSFYFBD-H3ASYI</span>
+                Mã đặt phòng: <span className="font-medium">{newOrder?.orderCode || '#NWH-MPSFYFBD-H3ASYI'}</span>
               </p>
               <p className="text-gray-500 text-sm max-w-sm mx-auto mt-4 leading-relaxed">
                 Chúng tôi đã gửi email xác nhận cùng vé điện tử đến địa chỉ email của bạn. Cảm ơn bạn đã lựa chọn NoWayHome.
@@ -535,14 +576,15 @@ const Payment = () => {
       {showETicket && (
         <ETicketModal 
           transaction={{
-            id: 'NWH-MPSFYFBD',
+            id: newOrder?.orderCode || 'NWH-MPSFYFBD',
             name: hotel.name,
             roomName: currentRoomName,
             checkIn: formatDateWithSlash(bookingData.startDate),
             checkOut: formatDateWithSlash(bookingData.endDate),
             guests: `${bookingData.adults + bookingData.children} người`,
             rooms: `${bookingData.rooms} phòng`,
-            status: ticketStatus
+            status: ticketStatus,
+            paymentMethod: newOrder?.paymentMethod || paymentMethod
           }} 
           onClose={() => setShowETicket(false)} 
           onCancelRequest={() => {

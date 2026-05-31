@@ -1,81 +1,287 @@
 // === Register.jsx - Trang Đăng ký tài khoản mới ===
-// Cho phép người dùng tạo tài khoản với: Họ tên, Email/Phone, Mật khẩu
+// Cho phép người dùng tạo tài khoản với: Họ tên, Email hoặc SĐT, Mật khẩu
 // Bố cục 2 cột: form trái, ảnh phải (giống Login)
+// Validation hiển thị dạng popup modal thay vì alert/inline text
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 
+// ── Popup validation / error modal ──────────────────────────────────────────
+const ValidationPopup = ({ messages, onClose }) => {
+  if (!messages || messages.length === 0) return null;
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        animation: 'vp-fadeIn 0.2s ease',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'white',
+          borderRadius: '22px',
+          padding: '36px 32px',
+          maxWidth: '400px',
+          width: '88%',
+          boxShadow: '0 20px 60px rgba(63,61,124,0.22)',
+          animation: 'vp-slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)',
+          textAlign: 'center',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Icon */}
+        <div
+          style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg,#fde8e8 0%,#fca5a5 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 18px',
+            fontSize: '28px',
+          }}
+        >
+          ⚠️
+        </div>
+
+        {/* Tiêu đề */}
+        <h3
+          style={{
+            fontSize: '19px',
+            fontWeight: '800',
+            color: '#403B69',
+            marginBottom: '14px',
+          }}
+        >
+          Vui lòng kiểm tra lại
+        </h3>
+
+        {/* Danh sách lỗi */}
+        <ul
+          style={{
+            listStyle: 'none',
+            padding: 0,
+            margin: '0 0 26px',
+            textAlign: 'left',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          {messages.map((msg, i) => (
+            <li
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                fontSize: '14px',
+                color: '#374151',
+                lineHeight: '1.5',
+              }}
+            >
+              <span style={{ color: '#ef4444', fontWeight: '700', flexShrink: 0 }}>•</span>
+              {msg}
+            </li>
+          ))}
+        </ul>
+
+        {/* Nút đóng */}
+        <button
+          onClick={onClose}
+          style={{
+            padding: '12px 40px',
+            borderRadius: '12px',
+            border: 'none',
+            background: 'linear-gradient(135deg,#403B69 0%,#6c63ff 100%)',
+            color: 'white',
+            fontWeight: '700',
+            fontSize: '15px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 15px rgba(64,59,105,0.35)',
+            transition: 'all 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 8px 24px rgba(64,59,105,0.45)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 15px rgba(64,59,105,0.35)';
+          }}
+        >
+          Đã hiểu
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes vp-fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes vp-slideUp {
+          from { opacity: 0; transform: translateY(28px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)     scale(1);    }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ── Main Register Component ───────────────────────────────────────────────────
 const Register = () => {
-  // State lưu thông tin người dùng
   const [name, setName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [errors, setErrors] = useState({});
-  // Lấy hàm login (sau đăng ký → tự động đăng nhập)
+  const [fieldErrors, setFieldErrors] = useState({});  // highlight border đỏ
+  const [popupMessages, setPopupMessages] = useState([]); // popup messages
+  const [isLoading, setIsLoading] = useState(false);
+
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Hàm validate
+  // Mở popup với danh sách lỗi
+  const showPopup = (msgs) => setPopupMessages(Array.isArray(msgs) ? msgs : [msgs]);
+  const closePopup = () => setPopupMessages([]);
+
+  // Validate và trả về { valid, errors (object), messages (array) }
   const validate = () => {
-    const newErrors = {};
-    if (!name.trim()) newErrors.name = 'Vui lòng nhập họ và tên';
-    
+    const errs = {};
+    const msgs = [];
+
+    if (!name.trim()) {
+      errs.name = true;
+      msgs.push('Vui lòng nhập họ và tên.');
+    }
+
     if (!identifier.trim()) {
-      newErrors.identifier = 'Vui lòng nhập Email hoặc Số điện thoại';
+      errs.identifier = true;
+      msgs.push('Vui lòng nhập Email hoặc Số điện thoại.');
     } else {
-      if (identifier.includes('@')) {
-        if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(identifier.trim())) {
-          newErrors.identifier = 'Email không hợp lệ (yêu cầu @gmail.com)';
+      const val = identifier.trim();
+      if (val.includes('@')) {
+        // Validate email
+        if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(val)) {
+          errs.identifier = true;
+          msgs.push('Địa chỉ email không hợp lệ.');
         }
-      } else if (/^(0|\+84|84)/.test(identifier.trim())) {
-        if (!/^(0|\+84|84)(3|5|7|8|9)[0-9]{8}$/.test(identifier.trim().replace(/\s/g, ''))) {
-          newErrors.identifier = 'Số điện thoại không hợp lệ (phải đủ 10 số)';
+      } else if (/^[0-9+]/.test(val)) {
+        // Validate phone (Vietnam)
+        if (!/^(0|\+84|84)(3|5|7|8|9)[0-9]{8}$/.test(val.replace(/\s/g, ''))) {
+          errs.identifier = true;
+          msgs.push('Số điện thoại không hợp lệ (phải đủ 10 số, đầu số VN hợp lệ).');
         }
+      } else {
+        errs.identifier = true;
+        msgs.push('Vui lòng nhập đúng định dạng Email hoặc Số điện thoại.');
       }
     }
 
     if (!password.trim()) {
-      newErrors.password = 'Vui lòng nhập mật khẩu';
-    } else if (password.length < 6) {
-      newErrors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
+      errs.password = true;
+      msgs.push('Vui lòng nhập mật khẩu.');
+    } else if (password.length < 8) {
+      errs.password = true;
+      msgs.push('Mật khẩu phải có ít nhất 8 ký tự.');
     }
 
     if (!confirmPassword.trim()) {
-      newErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu';
+      errs.confirmPassword = true;
+      msgs.push('Vui lòng xác nhận mật khẩu.');
     } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+      errs.confirmPassword = true;
+      msgs.push('Mật khẩu xác nhận không khớp.');
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { valid: msgs.length === 0, errs, msgs };
   };
 
-  // Xử lý đăng ký: giả lập → tự động login và chuyển về trang chủ
-  const handleRegister = (e) => {
+  // Submit
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
-    
-    login({ name: name.trim() || 'Người dùng mới' });
-    navigate('/');
+    const { valid, errs, msgs } = validate();
+    setFieldErrors(errs);
+
+    if (!valid) {
+      showPopup(msgs);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await authService.register(name.trim(), identifier.trim(), password);
+
+      const loginRes = await authService.login(identifier.trim(), password);
+      const loginData = loginRes.data?.data || loginRes.data;
+      const { accessToken, refreshToken, user: userData } = loginData;
+
+      login(
+        {
+          id: userData?.id,
+          name: userData?.name || name.trim() || 'Người dùng mới',
+          email: userData?.email || identifier.trim(),
+          role: userData?.role,
+        },
+        { accessToken, refreshToken }
+      );
+      navigate('/');
+    } catch (err) {
+      const raw =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Đăng ký không thành công. Vui lòng thử lại.';
+
+      // Server có thể trả mảng lỗi hoặc chuỗi
+      if (Array.isArray(raw)) {
+        showPopup(raw);
+      } else {
+        showPopup([typeof raw === 'string' ? raw : JSON.stringify(raw)]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Helper: class border cho input
+  const inputClass = (field) =>
+    `w-full border-b py-2 text-gray-900 focus:outline-none transition-colors ${
+      fieldErrors[field]
+        ? 'border-red-500'
+        : 'border-gray-400 focus:border-black'
+    }`;
 
   return (
     <div className="min-h-screen flex flex-col bg-white font-sans text-gray-900">
       <div className="flex-grow flex max-w-[1440px] mx-auto w-full pt-10 px-4 md:px-10">
+
         {/* ===== CỘT TRÁI: Form đăng ký ===== */}
         <div className="w-full lg:w-1/2 flex flex-col justify-center px-4 md:px-16 lg:px-24 pb-10">
           <div className="w-full max-w-md mx-auto">
-            {/* --- Logo và slogan --- */}
+
+            {/* Logo & slogan */}
             <div className="text-center mb-12">
               <h1 className="text-5xl font-serif font-bold text-black mb-3">NoWayHome</h1>
               <p className="text-gray-700 text-lg font-serif">Đặt phòng nhanh, trải nghiệm chất</p>
             </div>
 
-            {/* --- Form đăng ký --- */}
-            <form onSubmit={handleRegister}>
-              {/* Ô nhập: Họ và tên */}
+            {/* Form */}
+            <form onSubmit={handleRegister} noValidate>
+
+              {/* Họ và tên */}
               <div className="mb-6">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
                   Họ và tên
@@ -85,31 +291,32 @@ const Register = () => {
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (errors.name) setErrors({ ...errors, name: '' });
+                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: false }));
                   }}
-                  className={`w-full border-b py-2 text-gray-900 focus:outline-none transition-colors ${errors.name ? 'border-red-500' : 'border-gray-400 focus:border-black'}`}
+                  placeholder="Nguyễn Văn A"
+                  className={inputClass('name')}
                 />
-                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
               </div>
 
-              {/* Ô nhập: UUID / Email / Phone */}
+              {/* Email / Số điện thoại */}
               <div className="mb-6">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
-                  UUID / Email / Phone
+                  Email / Số điện thoại
                 </label>
                 <input
                   type="text"
                   value={identifier}
                   onChange={(e) => {
                     setIdentifier(e.target.value);
-                    if (errors.identifier) setErrors({ ...errors, identifier: '' });
+                    if (fieldErrors.identifier)
+                      setFieldErrors((prev) => ({ ...prev, identifier: false }));
                   }}
-                  className={`w-full border-b py-2 text-gray-900 focus:outline-none transition-colors ${errors.identifier ? 'border-red-500' : 'border-gray-400 focus:border-black'}`}
+                  placeholder="example@gmail.com hoặc 0912345678"
+                  className={inputClass('identifier')}
                 />
-                {errors.identifier && <p className="text-red-500 text-xs mt-1">{errors.identifier}</p>}
               </div>
 
-              {/* Ô nhập: Mật khẩu */}
+              {/* Mật khẩu */}
               <div className="mb-6">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
                   Password
@@ -119,14 +326,15 @@ const Register = () => {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    if (errors.password) setErrors({ ...errors, password: '' });
+                    if (fieldErrors.password)
+                      setFieldErrors((prev) => ({ ...prev, password: false }));
                   }}
-                  className={`w-full border-b py-2 text-gray-900 focus:outline-none transition-colors ${errors.password ? 'border-red-500' : 'border-gray-400 focus:border-black'}`}
+                  placeholder="Tối thiểu 8 ký tự"
+                  className={inputClass('password')}
                 />
-                {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
               </div>
 
-              {/* Ô nhập: Xác nhận mật khẩu */}
+              {/* Xác nhận mật khẩu */}
               <div className="mb-8">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
                   Xác nhận mật khẩu
@@ -136,23 +344,25 @@ const Register = () => {
                   value={confirmPassword}
                   onChange={(e) => {
                     setConfirmPassword(e.target.value);
-                    if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: '' });
+                    if (fieldErrors.confirmPassword)
+                      setFieldErrors((prev) => ({ ...prev, confirmPassword: false }));
                   }}
-                  className={`w-full border-b py-2 text-gray-900 focus:outline-none transition-colors ${errors.confirmPassword ? 'border-red-500' : 'border-gray-400 focus:border-black'}`}
+                  placeholder="Nhập lại mật khẩu"
+                  className={inputClass('confirmPassword')}
                 />
-                {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
               </div>
 
               {/* Nút đăng ký */}
               <button
                 type="submit"
-                className="w-full bg-[#403B69] hover:bg-[#2d2a4a] text-white py-3 font-semibold transition-colors mt-2"
+                disabled={isLoading}
+                className="w-full bg-[#403B69] hover:bg-[#2d2a4a] text-white py-3 font-semibold transition-colors mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Đăng kí
+                {isLoading ? 'Đang đăng ký...' : 'Đăng kí'}
               </button>
             </form>
 
-            {/* --- Đăng nhập mạng xã hội --- */}
+            {/* Đăng nhập mạng xã hội */}
             <div className="mt-8">
               <p className="text-center text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">
                 Hoặc đăng nhập với
@@ -173,7 +383,7 @@ const Register = () => {
               </div>
             </div>
 
-            {/* --- Liên kết điều hướng --- */}
+            {/* Liên kết điều hướng */}
             <div className="mt-10 text-center text-sm space-y-2">
               <p>
                 Bạn là chủ khách sạn?{' '}
@@ -181,9 +391,6 @@ const Register = () => {
                   Đăng nhập dành cho Đối tác
                 </Link>
               </p>
-              {/* Note: I added a link back to Login here so users can navigate back. 
-                  Even though it's not strictly in the image, it's essential for navigation based on your previous request. */}
-              {/* Nút quay lại đăng nhập */}
               <p className="mt-4">
                 <Link to="/login" className="font-bold text-gray-500 hover:text-black hover:underline">
                   Quay lại Đăng nhập
@@ -214,6 +421,9 @@ const Register = () => {
         </div>
         <div>© 2026 NOWAYHOME. ĐẶT PHÒNG NHANH, TRẢI NGHIỆM CHẤT.</div>
       </footer>
+
+      {/* ===== POPUP VALIDATION / SERVER ERROR ===== */}
+      <ValidationPopup messages={popupMessages} onClose={closePopup} />
     </div>
   );
 };
