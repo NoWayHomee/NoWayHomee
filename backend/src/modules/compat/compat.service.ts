@@ -925,7 +925,11 @@ export class CompatService {
     if (this.isArchivedProperty(booking.property)) {
       throw new BadRequestException('Khach san da ngung hoat dong, chi duoc xem lich su booking');
     }
-    await this.prisma.booking.update({ where: { id: booking.id }, data: { status } });
+    const updateData: Prisma.BookingUpdateInput = { status };
+    if (action === 'check-in' || action === 'check-out') {
+      updateData.paymentStatus = payment_status_enum.paid;
+    }
+    await this.prisma.booking.update({ where: { id: booking.id }, data: updateData });
     return { ok: true };
   }
 
@@ -1669,6 +1673,46 @@ export class CompatService {
       `;
     }
 
+    // Update main properties table columns for sync
+    const formattedTransport = transport.map(item => {
+      if (typeof item === 'string') {
+        const [name, distance] = item.split(':').map((part) => part.trim());
+        return { name, distance: distance || '' };
+      }
+      if (item && typeof item === 'object') {
+        return {
+          name: String(item.name || ''),
+          distance: String(item.distance || ''),
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    const formattedNearby = nearbyPlaces.map(place => {
+      const name = place.name;
+      if (!name) return null;
+      
+      const distanceM = Number(place.distanceM ?? place.distance_m ?? 0);
+      const distanceText = distanceM >= 1000 ? `${(distanceM / 1000).toFixed(1)}km` : `${distanceM}m`;
+      
+      return {
+        name,
+        type: place.category || place.type || 'poi',
+        distanceM,
+        distance: distanceText,
+        lat: Number(place.latitude ?? place.lat ?? 0),
+        lon: Number(place.longitude ?? place.lon ?? 0),
+      };
+    }).filter(Boolean);
+
+    await tx.property.update({
+      where: { id: propertyId },
+      data: {
+        transportConnections: formattedTransport,
+        nearbyPlaces: formattedNearby,
+      },
+    });
+
     // 3. Save property amenities
     await tx.propertyAmenity.deleteMany({
       where: { propertyId },
@@ -2011,7 +2055,7 @@ export class CompatService {
     const isCurrentStay =
       !isCancelled &&
       (booking.status === 'checked_in' ||
-        (booking.status === 'confirmed' && checkIn <= today && checkOut > today));
+        (['pending', 'confirmed'].includes(booking.status) && checkIn <= today && checkOut > today));
     // Khách đang checked_in chưa phải là "completed" dù đã qua ngày checkout
     const isCompleted =
       !isCancelled &&

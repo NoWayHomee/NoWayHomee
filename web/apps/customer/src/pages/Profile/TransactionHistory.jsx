@@ -42,9 +42,13 @@ const TransactionHistory = () => {
   ];
 
   // Lọc theo trạng thái
-  const filteredTransactions = bookings.filter((t) =>
-    statusFilter === 'all' || t.status === statusFilter
-  );
+  const filteredTransactions = bookings.filter((t) => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'success') {
+      return ['success', 'checked_in', 'checked_out', 'no_show'].includes(t.status);
+    }
+    return t.status === statusFilter;
+  });
 
   const handleCancelRequest = (transactionId) => {
     updateBookingStatus(transactionId, 'cancel_pending');
@@ -362,6 +366,21 @@ const TransactionHistory = () => {
                           Thành công
                         </span>
                       )}
+                      {transaction.status === 'checked_in' && (
+                        <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                          Đang ở
+                        </span>
+                      )}
+                      {transaction.status === 'checked_out' && (
+                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                          Đã trả phòng
+                        </span>
+                      )}
+                      {transaction.status === 'no_show' && (
+                        <span className="text-xs font-semibold text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded">
+                          Vắng mặt
+                        </span>
+                      )}
                       {transaction.status === 'cancel_pending' && (
                         <span className="text-xs font-semibold text-orange-600 bg-orange-100 border border-orange-200 px-2 py-0.5 rounded">
                           Chờ duyệt hủy
@@ -379,7 +398,7 @@ const TransactionHistory = () => {
                       )}
 
                       {/* Nút hành động */}
-                      {(transaction.status === 'success' || transaction.status === 'cancel_pending') && (
+                      {['success', 'checked_in', 'checked_out', 'cancel_pending'].includes(transaction.status) && (
                         <button 
                           type="button"
                           onClick={(e) => {
@@ -393,7 +412,7 @@ const TransactionHistory = () => {
                           <Ticket className="w-3.5 h-3.5" /> Vé điện tử
                         </button>
                       )}
-                      {transaction.status === 'success' && (
+                      {['success', 'checked_out'].includes(transaction.status) && (
                         <button 
                           type="button"
                           onClick={(e) => {

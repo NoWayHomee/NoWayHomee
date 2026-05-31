@@ -207,6 +207,7 @@ export default function PaymentScreen() {
         numChildren: guests.children,
         roomsNeeded: guests.rooms,
         voucherId: appliedVoucher ? Number(appliedVoucher.id) : undefined,
+        paymentMethod: selectedPaymentMethod,
       };
       // 1. Tạo booking
       const response: any = await apiClient.post('/bookings', payload);
@@ -423,6 +424,26 @@ export default function PaymentScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={[styles.paymentOption, selectedPaymentMethod === 'pay_later' && styles.paymentOptionActive]}
+            onPress={() => setSelectedPaymentMethod('pay_later')}>
+            <Ionicons name="time-outline" size={20} color={Colors.primary} />
+            <Text style={styles.paymentOptionText}>Thanh toán trả sau (tại khách sạn)</Text>
+            <Ionicons
+              name={selectedPaymentMethod === 'pay_later' ? 'radio-button-on' : 'radio-button-off'}
+              size={22} color={selectedPaymentMethod === 'pay_later' ? Colors.primary : Colors.light.textSecondary} />
+          </TouchableOpacity>
+
+          {selectedPaymentMethod === 'pay_later' && (
+            <View style={styles.payLaterInfo}>
+              <Text style={styles.payLaterTitle}>Xác nhận đặt phòng & Trả sau</Text>
+              <Text style={styles.payLaterText}>
+                Bạn có thể hoàn tất thủ tục đặt phòng ngay bây giờ mà không cần thanh toán trực tuyến.
+                Tổng số tiền <Text style={{ fontWeight: 'bold', color: Colors.primary }}>{formatMoney(priceDetails.finalTotal)}</Text> sẽ được thanh toán trực tiếp tại quầy lễ tân khi bạn đến nhận phòng.
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
             style={[styles.paymentOption, selectedPaymentMethod === 'bank' && styles.paymentOptionActive]}
             onPress={() => setSelectedPaymentMethod('bank')}>
             <Ionicons name="business-outline" size={20} color={Colors.primary} />
@@ -577,9 +598,13 @@ export default function PaymentScreen() {
             <View style={styles.successIconCircle}>
               <Ionicons name="checkmark-circle" size={72} color={Colors.light.success} />
             </View>
-            <Text style={styles.successTitle}>Thanh toán thành công!</Text>
+            <Text style={styles.successTitle}>
+              {selectedPaymentMethod === 'pay_later' ? 'Đặt phòng thành công!' : 'Thanh toán thành công!'}
+            </Text>
             <Text style={styles.successSubtitle}>
-              Đơn đặt phòng của bạn đã được xác nhận.{'\n'}Chi tiết đã gửi qua email.
+              {selectedPaymentMethod === 'pay_later'
+                ? 'Đơn đặt phòng của bạn đã được ghi nhận.\nVui lòng thanh toán tại khách sạn khi nhận phòng.'
+                : 'Đơn đặt phòng của bạn đã được xác nhận.\nChi tiết đã gửi qua email.'}
             </Text>
           </View>
         </View>
@@ -622,6 +647,26 @@ const styles = StyleSheet.create({
   creditCardForm: { paddingHorizontal: Spacing.xs, marginBottom: Spacing.sm },
   cardRow: { flexDirection: 'row' },
   qrPlaceholder: { alignItems: 'center', paddingVertical: Spacing.xl },
+  payLaterInfo: {
+    backgroundColor: '#F7F6FF',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: '#E8E5FF',
+  },
+  payLaterTitle: {
+    ...Typography.body2,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  payLaterText: {
+    ...Typography.caption,
+    color: Colors.light.text,
+    lineHeight: 18,
+  },
   qrText: { ...Typography.body2, color: Colors.light.textSecondary, marginTop: Spacing.sm },
   priceCard: { backgroundColor: Colors.primary, borderRadius: BorderRadius.lg, padding: Spacing.lg, marginBottom: Spacing.lg },
   priceCardTitle: { ...Typography.h3, color: 'white', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', marginBottom: Spacing.md },

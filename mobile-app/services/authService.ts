@@ -58,8 +58,16 @@ export const authService = {
    * Gọi API Đăng nhập
    * @param payload chứa email và password
    */
-  login: async (payload: LoginPayload): Promise<AuthResponse> => {
-    return apiClient.post('/auth/login', payload);
+  login: async (credentials: LoginPayload): Promise<AuthResponse> => {
+    return apiClient.post('/auth/login', credentials);
+  },
+
+  /**
+   * Gọi API Đăng nhập bằng Google
+   * @param credential chứa idToken của Google
+   */
+  googleLogin: async (credential: string): Promise<AuthResponse> => {
+    return apiClient.post('/auth/google', { credential });
   },
 
   /**

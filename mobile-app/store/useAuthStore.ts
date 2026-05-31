@@ -20,6 +20,7 @@ interface AuthState {
   
   // Các hàm hành động (Actions)
   login: (credentials: LoginPayload) => Promise<void>;
+  googleLogin: (credential: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   checkLocalToken: () => Promise<void>;
@@ -74,6 +75,23 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Bắt lỗi từ server và gán vào biến error
       set({ error: error.message || 'Đăng nhập thất bại', isLoading: false });
       throw error; // Ném lỗi này ra ngoài để màn hình Login.tsx hiển thị Alert
+    }
+  },
+
+  /**
+   * Hàm xử lý Đăng nhập bằng Google
+   */
+  googleLogin: async (credential: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authService.googleLogin(credential);
+      if (response.access_token) {
+        await SecureStore.setItemAsync('access_token', response.access_token);
+      }
+      set({ user: response.user, isLoading: false, hasToken: true });
+    } catch (error: any) {
+      set({ error: error.message || 'Đăng nhập bằng Google thất bại', isLoading: false });
+      throw error;
     }
   },
 

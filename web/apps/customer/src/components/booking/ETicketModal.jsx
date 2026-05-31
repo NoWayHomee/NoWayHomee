@@ -72,8 +72,21 @@ const ETicketModal = ({ transaction, onClose, onCancelRequest }) => {
 
   // Status mapping
   const isCancelPending = transaction.status === 'cancel_pending';
-  const statusText = isCancelPending ? 'CHỜ DUYỆT HỦY' : 'ĐÃ XÁC NHẬN';
-  const statusColor = isCancelPending ? 'bg-orange-100 text-orange-600' : 'bg-[#d1fae5] text-[#10b981]'; // Or use exactly the green color from screenshot
+  let statusText = 'ĐÃ XÁC NHẬN';
+  let statusColor = 'bg-[#d1fae5] text-[#10b981]';
+  if (isCancelPending) {
+    statusText = 'CHỜ DUYỆT HỦY';
+    statusColor = 'bg-orange-100 text-orange-600';
+  } else if (transaction.status === 'checked_in') {
+    statusText = 'ĐANG Ở';
+    statusColor = 'bg-blue-100 text-blue-600';
+  } else if (transaction.status === 'checked_out') {
+    statusText = 'ĐÃ TRẢ PHÒNG';
+    statusColor = 'bg-[#d1fae5] text-[#10b981]';
+  } else if (transaction.status === 'no_show') {
+    statusText = 'VẮNG MẶT (NO-SHOW)';
+    statusColor = 'bg-gray-100 text-gray-600';
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">

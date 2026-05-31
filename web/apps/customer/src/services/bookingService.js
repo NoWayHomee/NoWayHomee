@@ -12,4 +12,9 @@ export const bookingService = {
     getMyBookings: () => {
         return axiosClient.get('/api/bookings/me');
     },
+
+    // Yêu cầu hủy đặt phòng - POST /api/bookings/:id/request-cancel
+    requestCancelBooking: (id, reason) => {
+        return axiosClient.post(`/api/bookings/${id}/request-cancel`, { reason });
+    },
 };

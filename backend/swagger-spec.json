@@ -3054,6 +3054,11 @@
             "type": "number",
             "example": 1,
             "description": "Voucher ID to apply discount"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "example": "credit_card",
+            "description": "Payment method selected"
           }
         },
         "required": [

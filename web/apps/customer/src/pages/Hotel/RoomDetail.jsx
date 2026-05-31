@@ -12,7 +12,7 @@ import {
   Coffee, Waves, Dumbbell, Car, Utensils,
   ArrowLeft, Snowflake, Square, Heart,
   Maximize, BedDouble, Users, Clock, Info, PawPrint, Ban,
-  X, Camera
+  X, Camera, Plane, Train, Compass, DollarSign, ShoppingCart
 } from 'lucide-react';
 import { hotelService } from '../../services/hotelService';
 
@@ -83,7 +83,7 @@ const RoomDetail = () => {
 
         const response = await hotelService.getHotelDetail(id, queryParams);
         if (active) {
-          const raw = response.data;
+          const raw = response.data?.data || response.data;
 
           // Ánh xạ đối tượng Property từ backend sang cấu trúc UI
           // Helper: format time từ ISO date string (backend trả về dạng "1970-01-01T07:00:00.000Z")
@@ -95,6 +95,17 @@ const RoomDetail = () => {
               const m = String(d.getUTCMinutes()).padStart(2, '0');
               return `${h}:${m}`;
             } catch { return null; }
+          };
+
+          const safeParseJson = (data) => {
+            if (!data) return [];
+            if (typeof data === 'object') return data;
+            try {
+              return JSON.parse(data);
+            } catch (e) {
+              console.error("Lỗi parse JSON:", e);
+              return [];
+            }
           };
 
           // Ánh xạ loại hủy phòng sang tiếng Việt
@@ -198,18 +209,10 @@ const RoomDetail = () => {
             } : null,
 
             // Kết nối giao thông từ JSON field (transportConnections)
-            transportConnections: raw.transportConnections
-              ? (typeof raw.transportConnections === 'string'
-                ? JSON.parse(raw.transportConnections)
-                : raw.transportConnections)
-              : null,
+            transportConnections: safeParseJson(raw.transportConnections),
 
             // Địa điểm lân cận từ JSON field (nearbyPlaces)
-            nearbyPlaces: raw.nearbyPlaces
-              ? (typeof raw.nearbyPlaces === 'string'
-                ? JSON.parse(raw.nearbyPlaces)
-                : raw.nearbyPlaces)
-              : null,
+            nearbyPlaces: safeParseJson(raw.nearbyPlaces),
 
             // Thông tin giờ check-in trực tiếp từ property (nếu không có policy)
             checkInTime: formatTime(raw.checkInTime) || '14:00',
@@ -596,52 +599,87 @@ const RoomDetail = () => {
             </div>
 
             <div className="w-full border-t border-gray-100"></div>
-
-            {/* 4. Kết nối giao thông - từ field transportConnections (JSON) */}
-            {hotel.transportConnections && Array.isArray(hotel.transportConnections) && hotel.transportConnections.length > 0 && (
-              <>
-                <div>
-                  <h2 className="text-[22px] font-bold text-gray-900 mb-6 font-serif">Kết nối giao thông</h2>
-                  <div className="space-y-4">
-                    {hotel.transportConnections.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center">
-                        <div className="flex items-center text-gray-700">
-                          <MapPin className="w-5 h-5 mr-3 text-[#3F3D7C]" />
-                          <span>{item.name || item.label || item}</span>
+            
+            {/* 4. Kết nối giao thông */}
+            <div>
+              <h2 className="text-[22px] font-bold text-gray-900 mb-6 font-serif">Kết nối giao thông</h2>
+              {hotel.transportConnections && hotel.transportConnections.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#f8f9fa] rounded-2xl p-6">
+                  {hotel.transportConnections.map((item, idx) => {
+                    const name = item.name || item.label || item;
+                    const isAirport = /sân bay|airport/i.test(name);
+                    const isTrain = /ga tàu|ga |station|metro/i.test(name);
+                    return (
+                      <div key={idx} className="flex justify-between items-center bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm">
+                        <div className="flex items-center text-gray-700 min-w-0">
+                          <span className="p-2 bg-indigo-50 rounded-lg mr-3 text-[#3F3D7C] shrink-0">
+                            {isAirport ? <Plane className="w-4 h-4" /> : isTrain ? <Train className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+                          </span>
+                          <span className="font-medium text-sm truncate">{name}</span>
                         </div>
-                        {item.distance && <span className="text-gray-500 text-sm">{item.distance}</span>}
+                        {item.distance && (
+                          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full shrink-0 ml-2">
+                            {item.distance}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-                <div className="w-full border-t border-gray-100"></div>
-              </>
-            )}
+              ) : (
+                <p className="text-gray-500 text-sm italic bg-[#f8f9fa] rounded-2xl p-6">Đang cập nhật thông tin kết nối giao thông</p>
+              )}
+            </div>
 
-            {/* 5. Địa điểm lân cận - từ field nearbyPlaces (JSON) */}
-            {hotel.nearbyPlaces && Array.isArray(hotel.nearbyPlaces) && hotel.nearbyPlaces.length > 0 && (
-              <>
-                <div>
-                  <h2 className="text-[22px] font-bold text-gray-900 mb-6 font-serif">Địa điểm lân cận</h2>
-                  <div className="space-y-4">
-                    {hotel.nearbyPlaces.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center">
-                        <div className="flex items-center text-gray-700">
-                          {item.type === 'restaurant' || item.type === 'food'
-                            ? <Utensils className="w-5 h-5 mr-3 text-[#3F3D7C]" />
-                            : item.type === 'cafe' || item.type === 'coffee'
-                              ? <Coffee className="w-5 h-5 mr-3 text-[#3F3D7C]" />
-                              : <MapPin className="w-5 h-5 mr-3 text-[#3F3D7C]" />}
-                          <span>{item.name || item.label || item}</span>
+            <div className="w-full border-t border-gray-100"></div>
+
+            {/* 5. Xung quanh chỗ nghỉ */}
+            <div>
+              <h2 className="text-[22px] font-bold text-gray-900 mb-6 font-serif">Xung quanh chỗ nghỉ</h2>
+              {hotel.nearbyPlaces && hotel.nearbyPlaces.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#f8f9fa] rounded-2xl p-6">
+                  {hotel.nearbyPlaces.map((item, idx) => {
+                    const name = item.name || item.label || item;
+                    const type = String(item.type || '').toLowerCase();
+                    const isFood = type === 'restaurant' || type === 'food' || /nhà hàng|ăn uống|quán ăn/i.test(name);
+                    const isCoffee = type === 'cafe' || type === 'coffee' || /cà phê|cafe/i.test(name);
+                    const isATM = type === 'atm' || type === 'bank' || /atm|ngân hàng/i.test(name);
+                    const isShopping = type === 'supermarket' || type === 'store' || type === 'shop' || /siêu thị|cửa hàng/i.test(name);
+                    const isTour = type === 'tourist' || type === 'sightseeing' || type === 'attraction' || /tham quan|du lịch|bảo tàng/i.test(name);
+                    
+                    return (
+                      <div key={idx} className="flex justify-between items-center bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm">
+                        <div className="flex items-center text-gray-700 min-w-0">
+                          <span className="p-2 bg-indigo-50 rounded-lg mr-3 text-[#3F3D7C] shrink-0">
+                            {isFood ? (
+                              <Utensils className="w-4 h-4" />
+                            ) : isCoffee ? (
+                              <Coffee className="w-4 h-4" />
+                            ) : isATM ? (
+                              <DollarSign className="w-4 h-4" />
+                            ) : isShopping ? (
+                              <ShoppingCart className="w-4 h-4" />
+                            ) : isTour ? (
+                              <Compass className="w-4 h-4" />
+                            ) : (
+                              <MapPin className="w-4 h-4" />
+                            )}
+                          </span>
+                          <span className="font-medium text-sm truncate">{name}</span>
                         </div>
-                        {item.distance && <span className="text-gray-500 text-sm">{item.distance}</span>}
+                        {item.distance && (
+                          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full shrink-0 ml-2">
+                            {item.distance}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-                <div className="w-full border-t border-gray-100"></div>
-              </>
-            )}
+              ) : (
+                <p className="text-gray-500 text-sm italic bg-[#f8f9fa] rounded-2xl p-6">Đang cập nhật thông tin khu vực xung quanh</p>
+              )}
+            </div>
 
             {/* 6. Chính sách lưu trú - từ policy API */}
             <div>

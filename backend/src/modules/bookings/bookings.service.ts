@@ -408,6 +408,17 @@ export class BookingsService {
             },
           },
         },
+        roomType: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        review: {
+          select: {
+            id: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

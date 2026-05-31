@@ -738,7 +738,7 @@ function SingleBookingDetailModal({ booking, onClose, onChanged }: { booking: Bo
           </InfoBlock>
           <InfoBlock title="Thao tác lưu trú">
             <div className="flex flex-wrap gap-2">
-              {booking.status === "confirmed" && (
+              {["pending", "confirmed"].includes(booking.status) && (
                 <button
                   type="button"
                   onClick={() => runAction("check-in")}
@@ -775,7 +775,9 @@ function SingleBookingDetailModal({ booking, onClose, onChanged }: { booking: Bo
           </InfoBlock>
         </div>
       </div>
-      {confirmDialog}
+      <div onClick={(e) => e.stopPropagation()}>
+        {confirmDialog}
+      </div>
     </div>
   );
 }

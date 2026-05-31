@@ -6,7 +6,7 @@
  * ============================================================================
  */
 import React from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, ScrollView, Linking, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from '../../components/SafeImage';
 import { Link, useRouter } from 'expo-router';
@@ -20,6 +20,19 @@ import { CustomButton } from '../../components/CustomButton';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../constants/theme';
 import { useAuthStore } from '../../store/useAuthStore';
 
+let GoogleSignin: any = null;
+let statusCodes: any = null;
+let isGoogleSigninSupported = false;
+
+try {
+  const GoogleModule = require('@react-native-google-signin/google-signin');
+  GoogleSignin = GoogleModule.GoogleSignin;
+  statusCodes = GoogleModule.statusCodes;
+  isGoogleSigninSupported = true;
+} catch (error) {
+  console.warn('Google Sign-In is not supported in Expo Go. Use a development build to test native Google Sign-In.');
+}
+
 // 1. Khai báo bộ quy tắc kiểm tra dữ liệu bằng Zod (Validation Schema)
 const loginSchema = z.object({
   emailOrPhone: z.string().min(1, 'Vui lòng nhập email hoặc số điện thoại'),
@@ -30,7 +43,53 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, isLoading } = useAuthStore();
+  const { login, googleLogin, isLoading } = useAuthStore();
+  const [isGoogleLoading, setIsGoogleLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isGoogleSigninSupported && GoogleSignin) {
+      GoogleSignin.configure({
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || undefined,
+      });
+    }
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    if (!isGoogleSigninSupported || !GoogleSignin) {
+      Alert.alert(
+        'Không hỗ trợ',
+        'Đăng nhập Google yêu cầu Development Build. Hiện tại ứng dụng đang chạy trên Expo Go không hỗ trợ tính năng này.'
+      );
+      return;
+    }
+    try {
+      setIsGoogleLoading(true);
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data?.idToken;
+      if (!idToken) {
+        throw new Error('Không lấy được idToken từ Google.');
+      }
+      await googleLogin(idToken);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.error('Google Sign-In Error:', error);
+      let errorMsg = 'Đăng nhập Google thất bại.';
+      const codes = statusCodes || {};
+      if (error.code === codes.SIGN_IN_CANCELLED) {
+        errorMsg = 'Người dùng đã hủy đăng nhập.';
+      } else if (error.code === codes.IN_PROGRESS) {
+        errorMsg = 'Đang xử lý đăng nhập Google.';
+      } else if (error.code === codes.PLAY_SERVICES_NOT_AVAILABLE) {
+        errorMsg = 'Thiết bị không hỗ trợ Google Play Services.';
+      } else {
+        errorMsg = error.message || errorMsg;
+      }
+      Alert.alert('Lỗi', errorMsg);
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
 
   // 2. Cài đặt react-hook-form kết hợp với Zod
   const { control, handleSubmit, formState: { errors }, setError, clearErrors } = useForm<LoginForm>({
@@ -143,20 +202,21 @@ export default function LoginScreen() {
                 <View style={styles.divider} />
               </View>
 
-              <View style={styles.socialContainer}>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png'}} style={{width: 24, height: 24}} />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.socialButton, { backgroundColor: '#1877F2', borderWidth: 0 }]}>
-                  <FontAwesome5 name="facebook-f" size={20} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.socialButton, { backgroundColor: '#0068FF', borderWidth: 0 }]}>
-                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Zalo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.socialButton, { backgroundColor: 'black', borderWidth: 0 }]}>
-                  <FontAwesome5 name="apple" size={20} color="white" />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[styles.googleLoginButton, (isLoading || isGoogleLoading) && styles.googleLoginButtonDisabled]}
+                onPress={handleGoogleLogin}
+                disabled={isLoading || isGoogleLoading}
+              >
+                {isGoogleLoading ? (
+                  <ActivityIndicator color={Colors.light.text} size="small" />
+                ) : (
+                  <>
+                    <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} style={styles.googleIcon} />
+                    <Text style={styles.googleButtonText}>Đăng nhập với Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
 
               <View style={styles.footerLinks}>
                 <Text style={styles.footerText}>Chưa có tài khoản? </Text>
@@ -289,21 +349,29 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     fontWeight: '600',
   },
-  socialContainer: {
+  googleLoginButton: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  socialButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: BorderRadius.md,
     backgroundColor: 'white',
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+    ...Shadows.sm,
+  },
+  googleLoginButtonDisabled: {
+    opacity: 0.6,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+  },
+  googleButtonText: {
+    ...Typography.button,
+    color: Colors.light.text,
   },
   footerLinks: {
     flexDirection: 'row',
