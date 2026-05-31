@@ -646,18 +646,27 @@ export class CompatService {
   async adminStats(period: string) {
     const now = new Date();
     const today = this.todayDateKey();
-    const startDate =
-      period === 'week'
-        ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        : period === 'year'
-          ? new Date(now.getFullYear(), 0, 1)
-          : new Date(now.getFullYear(), now.getMonth(), 1);
-    const prevStartDate =
-      period === 'week'
-        ? new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000)
-        : period === 'year'
-          ? new Date(now.getFullYear() - 1, 0, 1)
-          : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    let startDate: Date;
+    let prevStartDate: Date;
+
+    if (period === 'week') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      prevStartDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === 'year') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+      prevStartDate = new Date(now.getFullYear(), now.getMonth() - 23, 1);
+    } else {
+      // period === 'month'
+      // Nếu hôm nay là đầu tháng (ngày 1 đến ngày 10), lấy từ ngày 1 của tháng trước
+      if (now.getDate() <= 10) {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      } else {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      const durationMs = now.getTime() - startDate.getTime();
+      prevStartDate = new Date(startDate.getTime() - durationMs);
+    }
+
     const [
       pendingPartners,
       pendingRooms,
@@ -734,17 +743,42 @@ export class CompatService {
       }),
       this.prisma.booking.findMany(),
     ]);
-    const completedBookings = periodBookings.filter((booking) =>
-      this.isBookingCompletedForDashboard(booking, today),
-    );
-    const prevCompletedBookings = prevPeriodBookings.filter((booking) =>
-      this.isBookingCompletedForDashboard(booking, today),
-    );
-    const activeBookings = allBookings.filter((booking) =>
-      this.isBookingActiveForDashboard(booking, today),
-    ).length;
+
+    // Doanh thu gộp (Thực nhận + Đang chờ) giống như trang đặt phòng, NHƯNG loại bỏ các booking đang lưu trú (isCurrentStay)
+    const completedBookings = periodBookings.filter((booking) => {
+      const isCancelledOrNoShow = booking.status === 'cancelled' || booking.status === 'no_show';
+      if (isCancelledOrNoShow) return false;
+
+      const checkIn = this.toDateKey(booking.checkInDate);
+      const checkOut = this.toDateKey(booking.checkOutDate);
+      const isCurrentStay =
+        booking.status === 'checked_in' ||
+        (['pending', 'confirmed'].includes(booking.status) && checkIn <= today && checkOut > today);
+
+      return !isCurrentStay;
+    });
+    const prevCompletedBookings = prevPeriodBookings.filter((booking) => {
+      const isCancelledOrNoShow = booking.status === 'cancelled' || booking.status === 'no_show';
+      if (isCancelledOrNoShow) return false;
+
+      const checkIn = this.toDateKey(booking.checkInDate);
+      const checkOut = this.toDateKey(booking.checkOutDate);
+      const isCurrentStay =
+        booking.status === 'checked_in' ||
+        (['pending', 'confirmed'].includes(booking.status) && checkIn <= today && checkOut > today);
+
+      return !isCurrentStay;
+    });
+    const activeBookings = allBookings.filter((booking) => {
+      const checkIn = this.toDateKey(booking.checkInDate);
+      const checkOut = this.toDateKey(booking.checkOutDate);
+      return (
+        booking.status === 'checked_in' ||
+        (booking.status === 'confirmed' && checkIn <= today && checkOut > today)
+      );
+    }).length;
     const pendingBookings = allBookings.filter((booking) =>
-      booking.status === 'pending' && !this.isBookingCompletedForDashboard(booking, today),
+      booking.status === 'pending',
     ).length;
     const totalRevenue = completedBookings.reduce(
       (sum, booking) => sum + Number(booking.totalAmount),
@@ -793,7 +827,7 @@ export class CompatService {
       .slice(0, 5);
     const bookingStats = {
       confirmed: periodStatusBookings.filter((booking) =>
-        this.isBookingCompletedForDashboard(booking, today),
+        ['confirmed', 'checked_in', 'checked_out'].includes(booking.status),
       ).length,
       canceled: periodStatusBookings.filter((booking) => booking.status === 'cancelled')
         .length,
