@@ -379,6 +379,138 @@ export class AdminService {
     });
   }
 
+  async getPartners(status?: string) {
+    const kycFilter = status && ['pending', 'approved', 'rejected'].includes(status)
+      ? status as 'pending' | 'approved' | 'rejected'
+      : undefined;
+
+    const profiles = await this.prisma.partnerProfile.findMany({
+      where: kycFilter ? { kycStatus: kycFilter } : undefined,
+      include: {
+        user: true,
+        properties: { select: { id: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return profiles.map((p) => ({
+      id: Number(p.id),
+      userId: Number(p.userId),
+      email: p.user.email,
+      fullName: p.user.fullName,
+      phone: p.user.phone ?? null,
+      hotelName: p.businessName,
+      status: p.kycStatus,          // pending | approved | rejected
+      userStatus: p.user.status,    // active | suspended
+      rejectReason: null,
+      createdAt: p.createdAt.toISOString(),
+      reviewedAt: p.kycReviewedAt?.toISOString() ?? null,
+      roomCount: p.properties.length,
+    }));
+  }
+
+  async updatePartner(partnerProfileId: string, dto: { fullName?: string; phone?: string; businessName?: string }) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({ where: { id } });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (dto.businessName) {
+        await tx.partnerProfile.update({ where: { id }, data: { businessName: dto.businessName } });
+      }
+      if (dto.fullName !== undefined || dto.phone !== undefined) {
+        await tx.user.update({
+          where: { id: profile.userId },
+          data: {
+            ...(dto.fullName !== undefined && { fullName: dto.fullName }),
+            ...(dto.phone !== undefined && { phone: dto.phone }),
+          },
+        });
+      }
+    });
+
+    return { success: true };
+  }
+
+  async deletePartner(partnerProfileId: string) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({ where: { id } });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { deletedAt: new Date(), status: 'deleted' },
+    });
+    return { success: true };
+  }
+
+  async lockPartner(partnerProfileId: string) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({ where: { id } });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { status: 'suspended' },
+    });
+    return { success: true };
+  }
+
+  async unlockPartner(partnerProfileId: string) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({ where: { id } });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { status: 'active' },
+    });
+    return { success: true };
+  }
+
+  async revokePartner(partnerProfileId: string) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({ where: { id } });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { userType: 'customer' },
+    });
+    return { success: true };
+  }
+
+  async getPartnerRooms(partnerProfileId: string) {
+    const id = this.parseBigIntParam(partnerProfileId, 'partnerProfileId');
+    const profile = await this.prisma.partnerProfile.findUnique({
+      where: { id },
+      include: {
+        properties: {
+          include: {
+            media: { where: { isCover: true }, take: 1 },
+            roomTypes: { select: { id: true, name: true, basePrice: true, totalRooms: true } },
+          },
+        },
+      },
+    });
+    if (!profile) throw new NotFoundException(`PartnerProfile #${partnerProfileId} not found`);
+
+    return profile.properties.map((prop) => ({
+      id: Number(prop.id),
+      name: prop.name,
+      address: prop.address,
+      city: prop.city,
+      status: prop.status,
+      coverImage: prop.media[0]?.url ?? null,
+      roomTypes: prop.roomTypes.map((rt) => ({
+        id: Number(rt.id),
+        name: rt.name,
+        basePrice: Number(rt.basePrice),
+        totalRooms: rt.totalRooms,
+      })),
+    }));
+  }
+
   private parseBigIntParam(value: string, paramName: string): bigint {
     if (!/^\d+$/.test(value)) {
       throw new NotFoundException(`${paramName} must be a positive integer`);
