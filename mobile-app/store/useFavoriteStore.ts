@@ -7,16 +7,29 @@ interface FavoriteState {
   fetchFavorites: () => Promise<void>;
   toggleFavorite: (property: Property) => Promise<void>;
   isFavorite: (id: string) => boolean;
+  clearFavorites: () => void;
 }
 
 export const useFavoriteStore = create<FavoriteState>((set, get) => ({
   favorites: [],
+  clearFavorites: () => set({ favorites: [] }),
   fetchFavorites: async () => {
+    const { useAuthStore } = require('./useAuthStore');
+    const { hasToken } = useAuthStore.getState();
+    if (!hasToken) {
+      set({ favorites: [] });
+      return;
+    }
     try {
       const response: any = await apiClient.get('/favorites');
       const items = (response || []).map((item: any) => item.property);
       set({ favorites: items });
-    } catch (error) {
+    } catch (error: any) {
+      // Session expired or unauthorized — clear silently, interceptor handles logout
+      if (error?.message?.includes('Phiên đăng nhập')) {
+        set({ favorites: [] });
+        return;
+      }
       console.error('Error fetching favorites:', error);
     }
   },

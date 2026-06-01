@@ -13,7 +13,9 @@ export interface Partner {
 
 /** Get partners list with optional status filter */
 export const fetchPartners = async (status: string) => {
-  return await api(`/admin/partners?status=${status}`);
+  const res: any = await api(`/admin/partners?status=${status}`);
+  // TransformInterceptor wraps response as { statusCode, message, data }
+  return res?.data ?? res;
 };
 
 /** Update partner details */
@@ -28,19 +30,18 @@ export const deletePartner = async (id: number) => {
 
 /** Approve a partner */
 export const approvePartner = async (id: number) => {
-  return await api(`/admin/partners/${id}/status`, {
-    method: "PATCH",
+  return await api(`/admin/partners/${id}/approve`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "active" })
   });
 };
 
 /** Reject a partner with reason */
 export const rejectPartner = async (id: number, reason: string) => {
-  return await api(`/admin/partners/${id}/status`, {
-    method: "PATCH",
+  return await api(`/admin/partners/${id}/reject`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "rejected" })
+    body: JSON.stringify({ reason }),
   });
 };
 
@@ -63,5 +64,6 @@ export const revokePartner = async (id: number) => {
 };
 
 export const fetchPartnerRooms = async (partnerId: number) => {
-  return await api(`/admin/partners/${partnerId}/rooms`);
+  const res: any = await api(`/admin/partners/${partnerId}/rooms`);
+  return res?.data ?? res;
 };
