@@ -76,8 +76,10 @@ function toDateOnly(date: Date) {
 }
 
 function belongsToUpcomingTab(booking: BookingItem) {
+  // Only use isFutureStay (computed from date+status), NOT raw status === 'pending'
+  // so that expired-pending bookings don't wrongly appear in upcoming tab
   return (
-    (booking.isFutureStay || booking.status === "pending") &&
+    booking.isFutureStay &&
     !booking.isCurrentStay &&
     !booking.isCompleted &&
     booking.status !== "cancelled"
@@ -105,10 +107,12 @@ function getPresetRange(preset: string) {
 
 function bookingStatusKey(booking: BookingItem) {
   if (booking.status === "cancelled") return "cancelled";
+  // Check date-computed flags FIRST (before raw status) so a past-pending
+  // booking shows as "completed" not "pending", and current-pending shows as "current"
   if (booking.isCompleted) return "completed";
-  if (booking.status === "pending") return "pending";
   if (booking.isCurrentStay) return "current";
   if (booking.isFutureStay) return "upcoming";
+  if (booking.status === "pending") return "pending";
   return "unfinished";
 }
 
@@ -263,9 +267,11 @@ export function BookingsTab() {
 
   const transformedBookings = useMemo(() => {
     return rawBookings.map((b) => {
-      const isCompleted = b.status === "confirmed" && new Date(b.checkOutDate) < new Date();
-      const isCurrentStay = b.status === "confirmed" && new Date(b.checkInDate) <= new Date() && new Date(b.checkOutDate) >= new Date();
-      const isFutureStay = b.status === "confirmed" && new Date(b.checkInDate) > new Date();
+      // Use backend-computed flags directly — backend handles all statuses correctly
+      // (pending/confirmed/checked_in/checked_out) based on actual date comparison
+      const isCompleted: boolean = b.isCompleted ?? false;
+      const isCurrentStay: boolean = b.isCurrentStay ?? false;
+      const isFutureStay: boolean = b.isFutureStay ?? false;
 
       return {
         id: b.id,
@@ -282,8 +288,8 @@ export function BookingsTab() {
         status: b.status,
         paymentStatus: b.paymentStatus,
         total: b.total,
-        platformFee: b.platformFee || 0,
-        partnerPayout: b.partnerPayout || 0,
+        platformFee: b.platformFee || Math.round((b.total || 0) * 0.1),
+        partnerPayout: b.partnerPayout || Math.round((b.total || 0) * 0.9),
         createdAt: b.createdAt,
         specialRequests: b.specialRequests,
         cancellationReason: b.cancellationReason,
@@ -328,8 +334,8 @@ export function BookingsTab() {
       const grossRevenue = sum(activeBookings, "total");
       const pendingRevenue = grossRevenue - earnedRevenue;
       const earnedCommission = sum(completed, "platformFee");
-      // Ước tính hoa hồng pending dựa trên tỷ lệ từ đơn đã hoàn thành
-      const commissionRate = earnedRevenue > 0 ? earnedCommission / earnedRevenue : 0;
+      // Ước tính hoa hồng pending dựa trên tỷ lệ từ đơn đã hoàn thành (mặc định 10% nếu chưa có)
+      const commissionRate = earnedRevenue > 0 ? earnedCommission / earnedRevenue : 0.1;
       const grossCommission = sum(activeBookings, "platformFee");
       // Nếu platformFee chưa được ghi nhận (=0) cho đơn pending → ước tính
       const pendingCommissionRaw = grossCommission - earnedCommission;

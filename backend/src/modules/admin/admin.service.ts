@@ -185,12 +185,30 @@ export class AdminService {
         }
 
         const today = new Date();
-        const checkIn = new Date(booking.checkInDate);
-        const checkOut = new Date(booking.checkOutDate);
+        // Strip time — compare date only (Vietnam time: UTC+7)
+        const todayVN = new Date(today.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+        todayVN.setHours(0, 0, 0, 0);
+        const checkInDay = new Date(booking.checkInDate);
+        checkInDay.setHours(0, 0, 0, 0);
+        const checkOutDay = new Date(booking.checkOutDate);
+        checkOutDay.setHours(0, 0, 0, 0);
 
-        const isCompleted = booking.status === 'checked_out' || (booking.status === 'confirmed' && today > checkOut);
-        const isCurrentStay = booking.status === 'checked_in' || (booking.status === 'confirmed' && today >= checkIn && today <= checkOut);
-        const isFutureStay = booking.status === 'confirmed' && today < checkIn;
+        const isCurrentStay =
+          !isCancelled &&
+          (booking.status === 'checked_in' ||
+            (['pending', 'confirmed'].includes(booking.status) &&
+              checkInDay <= todayVN &&
+              checkOutDay > todayVN));
+        
+        const isCompleted =
+          !isCancelled &&
+          !isCurrentStay &&
+          (booking.status === 'checked_out' || checkOutDay <= todayVN);
+          
+        const isFutureStay =
+          !isCancelled &&
+          ['pending', 'confirmed'].includes(booking.status) &&
+          checkInDay > todayVN;
 
         return {
           id: Number(booking.id),
@@ -243,7 +261,90 @@ export class AdminService {
       };
     });
 
-    return report;
+    return { hotels: report };
+  }
+
+  async fetchBookings() {
+    const bookings = await this.prisma.booking.findMany({
+      include: {
+        customer: true,
+        roomType: {
+          include: {
+            property: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return bookings.map((b) => {
+      const today = new Date();
+      // Strip time — compare date only (Vietnam time: UTC+7)
+      const todayVN = new Date(today.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+      todayVN.setHours(0, 0, 0, 0);
+      const checkInDay = new Date(b.checkInDate);
+      checkInDay.setHours(0, 0, 0, 0);
+      const checkOutDay = new Date(b.checkOutDate);
+      checkOutDay.setHours(0, 0, 0, 0);
+
+      const isCancelled = b.status === 'cancelled';
+      const isCurrentStay =
+        !isCancelled &&
+        (b.status === 'checked_in' ||
+          (['pending', 'confirmed'].includes(b.status) &&
+            checkInDay <= todayVN &&
+            checkOutDay > todayVN));
+      const isCompleted =
+        !isCancelled &&
+        !isCurrentStay &&
+        (b.status === 'checked_out' || checkOutDay <= todayVN);
+      const isFutureStay =
+        !isCancelled &&
+        ['pending', 'confirmed'].includes(b.status) &&
+        checkInDay > todayVN;
+
+      return {
+        id: Number(b.id),
+        bookingCode: b.bookingCode,
+        user: b.customer
+          ? {
+              fullName: b.customer.fullName,
+              email: b.customer.email,
+              phone: b.customer.phone,
+            }
+          : null,
+        room: b.roomType
+          ? {
+              name: b.roomType.name,
+              property: b.roomType.property
+                ? {
+                    name: b.roomType.property.name,
+                    status: b.roomType.property.status,
+                    isArchived: !!b.roomType.property.deletedAt,
+                  }
+                : null,
+            }
+          : null,
+        checkInDate: b.checkInDate.toISOString(),
+        checkOutDate: b.checkOutDate.toISOString(),
+        nights: b.numNights,
+        adults: b.numAdults,
+        children: b.numChildren,
+        status: b.status,
+        paymentStatus: b.paymentStatus,
+        total: Number(b.totalAmount),
+        platformFee: Number(b.platformFeeAmount),
+        partnerPayout: Number(b.partnerPayoutAmount),
+        createdAt: b.createdAt.toISOString(),
+        specialRequests: b.specialRequests,
+        cancellationReason: b.cancellationReason,
+        isCompleted,
+        isCurrentStay,
+        isFutureStay,
+      };
+    });
   }
 
   async markBookingPaid(adminUser: AuthenticatedUser, bookingIdStr: string) {
