@@ -33,3 +33,4 @@ pnpm-debug.log*
 *.sln.docstates
 .vs/
 .understand-anything/.understandignore
+.vscode/settings.json
