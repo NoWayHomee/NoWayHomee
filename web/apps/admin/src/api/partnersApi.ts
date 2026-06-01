@@ -38,6 +38,14 @@ export const rejectPartner = async (id: number, reason: string) => {
   });
 };
 
+/**
+ * Thu hồi quyền đối tác: hạ tài khoản về customer, KHÔNG xóa tài khoản.
+ * Dùng thay cho deletePartner khi chỉ muốn hủy quyền ĐT của user đã được duyệt.
+ */
+export const revokePartner = async (id: number) => {
+  return await api(`/admin/partners/${id}/revoke`, { method: "POST" });
+};
+
 export const fetchPartnerRooms = async (partnerId: number) => {
   return await api(`/admin/partners/${partnerId}/rooms`);
 };
