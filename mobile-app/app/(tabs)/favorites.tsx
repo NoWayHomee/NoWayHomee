@@ -18,7 +18,11 @@ import { useFavoriteStore } from '../../store/useFavoriteStore';
 
 export default function FavoritesScreen() {
   const router = useRouter();
-  const { favorites, toggleFavorite } = useFavoriteStore();
+  const { favorites, toggleFavorite, fetchFavorites } = useFavoriteStore();
+
+  React.useEffect(() => {
+    fetchFavorites();
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
