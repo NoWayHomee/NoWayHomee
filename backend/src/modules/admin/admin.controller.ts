@@ -75,6 +75,14 @@ export class AdminController {
     return this.adminService.fetchBookingReport();
   }
 
+  @Get('bookings')
+  @ApiOperation({ summary: 'Get all bookings' })
+  @ApiResponse({ status: 200, description: 'Bookings retrieved successfully.' })
+  @ApiResponse({ status: 403, description: 'Admin role is required.' })
+  getBookings() {
+    return this.adminService.fetchBookings();
+  }
+
   @Post('bookings/:bookingId/mark-paid')
   @ApiOperation({ summary: 'Mark booking payment status as paid' })
   @ApiResponse({ status: 200, description: 'Booking marked as paid.' })

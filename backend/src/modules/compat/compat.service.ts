@@ -1064,33 +1064,72 @@ export class CompatService {
 
   async bookingReport(user?: AuthenticatedUser) {
     const partner = user ? await this.partnerProfile(user) : null;
+    // When called without user (admin context), do NOT filter by partnerId — return all properties
+    const whereClause = partner ? { partnerId: partner.id } : {};
     const properties = await this.prisma.property.findMany({
-      where: {
-        partnerId: partner?.id,
-      },
+      where: whereClause,
       include: {
         partner: { include: { user: true } },
-        bookings: { 
-          include: { customer: true, roomType: true }, 
-          orderBy: { createdAt: 'desc' } 
+        bookings: {
+          include: { customer: true, roomType: true },
+          orderBy: { createdAt: 'desc' }
         },
       },
       orderBy: { createdAt: 'desc' },
     });
     return {
-      hotels: properties.map((property) => ({
-        propertyId: property.id,
-        propertyName: property.name,
-        city: property.city,
-        address: property.address,
-        partnerHotelName: property.partner.businessName,
-        partnerEmail: property.partner.user.email,
-        propertyStatus: property.status,
-        isArchived: this.isArchivedProperty(property),
-        archivedLabel: this.isArchivedProperty(property) ? 'Khách sạn đã ngừng hoạt động' : null,
-        isActiveHotel: property.status === 'active' && !property.deletedAt,
-        bookings: property.bookings.map((booking) => this.mapBooking(booking)),
-      })),
+      hotels: properties.map((property) => {
+        const bookingsList = property.bookings;
+        const mappedBookings = bookingsList.map((booking) => this.mapBooking(booking));
+
+        let earnedRevenue = 0;
+        let pendingRevenue = 0;
+        let earnedCommission = 0;
+        let pendingCommission = 0;
+        let earnedPartnerPayout = 0;
+        let pendingPartnerPayout = 0;
+
+        for (const booking of bookingsList) {
+          const total = Number(booking.totalAmount);
+          const fee = Number(booking.platformFeeAmount);
+          const payout = Number(booking.partnerPayoutAmount);
+          if (booking.status !== 'cancelled') {
+            if (booking.paymentStatus === 'paid') {
+              earnedRevenue += total;
+              earnedCommission += fee;
+              earnedPartnerPayout += payout;
+            } else {
+              pendingRevenue += total;
+              pendingCommission += fee;
+              pendingPartnerPayout += payout;
+            }
+          }
+        }
+
+        const currentStayCount = mappedBookings.filter((b) => b.isCurrentStay).length;
+
+        return {
+          propertyId: Number(property.id),
+          propertyName: property.name,
+          city: property.city,
+          address: property.address,
+          partnerHotelName: property.partner?.businessName ?? property.name,
+          partnerEmail: property.partner?.user?.email ?? null,
+          propertyStatus: property.status,
+          isArchived: this.isArchivedProperty(property),
+          archivedLabel: this.isArchivedProperty(property) ? 'Khách sạn đã ngừng hoạt động' : null,
+          isActiveHotel: property.status === 'active' && !property.deletedAt,
+          currentStayCount,
+          totalBookings: bookingsList.length,
+          earnedRevenue,
+          pendingRevenue,
+          earnedCommission,
+          pendingCommission,
+          earnedPartnerPayout,
+          pendingPartnerPayout,
+          bookings: mappedBookings,
+        };
+      }),
     };
   }
 
