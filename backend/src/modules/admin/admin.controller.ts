@@ -67,8 +67,9 @@ export class AdminController {
     return this.adminService.updatePropertyStatus(user, propertyId, dto);
   }
 
+  // ── Booking report ─────────────────────────────────────────────────────────
+
   @Get('booking-report')
-  @ApiOperation({ summary: 'Get booking report across all properties' })
   @ApiResponse({ status: 200, description: 'Booking report retrieved successfully.' })
   @ApiResponse({ status: 403, description: 'Admin role is required.' })
   getBookingReport() {
