@@ -60,9 +60,6 @@ Desktop.ini
 # =============================================================================
 # Backend (NestJS)
 # =============================================================================
-# Swagger spec auto-generated on startup
-backend/swagger-spec.json
-
 # Uploaded files (if stored locally)
 uploads/
 **/uploads/
