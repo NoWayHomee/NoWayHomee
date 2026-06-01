@@ -123,7 +123,7 @@ export default function TicketScreen() {
     badgeText = '#10B981';
   }
 
-  const canCancel = !isCancelled && !isCheckedIn && !isCheckedOut && !isPendingCancel;
+  const canCancel = !isCancelled && !isCheckedOut && !isPendingCancel;
 
   return (
     <SafeAreaView style={styles.container}>

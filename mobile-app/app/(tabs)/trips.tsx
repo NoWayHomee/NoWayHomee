@@ -68,7 +68,7 @@ export default function TripsScreen() {
     queryKey: ['my_bookings'],
     queryFn: async () => {
       const response = await apiClient.get('/bookings/me');
-      return response as any[];
+      return response as unknown as any[];
     },
     refetchInterval: 5000,
   });
@@ -85,6 +85,7 @@ export default function TripsScreen() {
   const upcomingTrips = bookings.filter(b => {
     const isCancelled = b.status === 'cancelled' || b.status === 'canceled';
     if (isCancelled) return false;
+    if (b.status === 'checked_out') return false;
     const checkOut = new Date(b.checkOutDate);
     checkOut.setHours(0, 0, 0, 0);
     return checkOut >= today;
@@ -222,7 +223,6 @@ export default function TripsScreen() {
           ListFooterComponent={
             activeTab === 'upcoming' && activeData.length > 0 ? <Text style={styles.footerText}>Bạn đã xem hết danh sách chuyến đi sắp tới.</Text> : null
           }
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         />
       )}
     </SafeAreaView>

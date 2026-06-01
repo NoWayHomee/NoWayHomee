@@ -17,7 +17,7 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
       const items = (response || []).map((item: any) => item.property);
       set({ favorites: items });
     } catch (error) {
-      console.error('Error fetching favorites:', error);
+      console.warn('Error fetching favorites:', error);
     }
   },
   toggleFavorite: async (property) => {
@@ -28,7 +28,7 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
       try {
         await apiClient.delete(`/favorites/${property.id}`);
       } catch (error) {
-        console.error('Error removing favorite:', error);
+        console.warn('Error removing favorite:', error);
         set({ favorites: [...get().favorites, property] });
       }
     } else {
@@ -36,7 +36,7 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
       try {
         await apiClient.post('/favorites', { propertyId: property.id });
       } catch (error) {
-        console.error('Error adding favorite:', error);
+        console.warn('Error adding favorite:', error);
         set({ favorites: get().favorites.filter((p) => p.id !== property.id) });
       }
     }

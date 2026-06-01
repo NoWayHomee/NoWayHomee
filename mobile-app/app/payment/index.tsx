@@ -4,7 +4,7 @@
  * MỤC ĐÍCH: Màn hình Xác nhận và Thanh toán (Checkout Screen).
  * ============================================================================
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   Platform, Alert, ActivityIndicator, Modal,
@@ -89,6 +89,14 @@ export default function PaymentScreen() {
     enabled: !!propertyId,
   });
 
+  const { data: userProfile } = useQuery({
+    queryKey: ['user_profile'],
+    queryFn: async () => {
+      const response = await apiClient.get('/users/me');
+      return response as any;
+    }
+  });
+
   const { data: activeVouchers } = useQuery({
     queryKey: ['active_vouchers', propertyId],
     queryFn: async () => {
@@ -117,17 +125,30 @@ export default function PaymentScreen() {
   const [appliedVoucher, setAppliedVoucher] = useState<any>(null);
 
   // --- Cấu hình react-hook-form ---
-  const { control, handleSubmit, formState: { errors } } = useForm<CheckoutForm>({
+  const { control, handleSubmit, formState: { errors }, reset } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { 
-      fullName: user?.fullName || '', 
-      phone: user?.phone || '', 
-      email: user?.email || '', 
-      cardNumber: '', 
-      cardExpiry: '', 
-      cardCvv: '' 
+    defaultValues: {
+      fullName: '',
+      phone: '',
+      email: '',
+      cardNumber: '',
+      cardExpiry: '',
+      cardCvv: '',
     },
   });
+
+  useEffect(() => {
+    if (userProfile || user) {
+      reset({
+        fullName: userProfile?.fullName || user?.fullName || '',
+        phone: userProfile?.phone || user?.phone || '',
+        email: userProfile?.email || user?.email || '',
+        cardNumber: '',
+        cardExpiry: '',
+        cardCvv: '',
+      });
+    }
+  }, [userProfile, user, reset]);
 
   const basePricePerNight = selectedRoomType?.basePrice || property?.roomTypes?.[0]?.basePrice || 0;
 
@@ -195,12 +216,20 @@ export default function PaymentScreen() {
 
   const createBookingMutation = useMutation({
     mutationFn: async (data: CheckoutForm) => {
+      const roomTypeId = selectedRoomType?.id || property?.roomTypes?.[0]?.id;
+      // Lấy ratePlanId từ ratePlans[0] nếu API trả về, nếu không fallback về roomTypeId
+      // (backend sẽ tự tìm đúng rate plan nếu ratePlanId không khớp)
+      const ratePlanId =
+        selectedRoomType?.ratePlans?.[0]?.id ||
+        property?.roomTypes?.[0]?.ratePlans?.[0]?.id ||
+        roomTypeId;
+
       const payload = {
         propertyId: Number(propertyId),
-        roomTypeId: selectedRoomType?.id || property?.roomTypes?.[0]?.id,
-        ratePlanId: selectedRoomType?.id || property?.roomTypes?.[0]?.id,
-        checkInDate: new Date(checkInDate).toISOString(),
-        checkOutDate: new Date(checkOutDate).toISOString(),
+        roomTypeId,
+        ratePlanId,
+        checkInDate: checkInDate,   // YYYY-MM-DD format
+        checkOutDate: checkOutDate, // YYYY-MM-DD format
         numAdults: guests.adults,
         numChildren: guests.children,
         roomsNeeded: guests.rooms,

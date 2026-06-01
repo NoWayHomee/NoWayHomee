@@ -35,6 +35,8 @@ type BookingItem = {
   propertyStatus?: string | null;
   propertyIsArchived?: boolean;
   propertyArchivedLabel?: string | null;
+  voucherCode?: string | null;
+  discountAmount?: number;
 };
 
 type HotelReport = {
@@ -61,6 +63,13 @@ type HotelReport = {
 
 function fmtVnd(value: number) {
   return `${Math.round(value || 0).toLocaleString("vi-VN")} đ`;
+}
+
+function bookingPlatformFee(b: { total: number; partnerPayout: number; platformFee: number }) {
+  const fee = Number(b.platformFee);
+  if (fee > 0) return fee;
+  const inferred = Number(b.total) - Number(b.partnerPayout);
+  return inferred > 0 ? inferred : Math.round((Number(b.total) || 0) * 0.1);
 }
 
 function fmtDate(value: string) {
@@ -288,8 +297,12 @@ export function BookingsTab() {
         status: b.status,
         paymentStatus: b.paymentStatus,
         total: b.total,
-        platformFee: Number(b.platformFee) > 0 ? Number(b.platformFee) : Math.round((Number(b.total) || 0) * 0.1),
-        partnerPayout: Number(b.partnerPayout) > 0 && Number(b.partnerPayout) !== Number(b.total) ? Number(b.partnerPayout) : Math.round((Number(b.total) || 0) * 0.9),
+        platformFee: Number(b.platformFee) > 0 
+          ? Number(b.platformFee) 
+          : (Number(b.total) - Number(b.partnerPayout) > 0 ? Number(b.total) - Number(b.partnerPayout) : Math.round((Number(b.total) || 0) * 0.1)),
+        partnerPayout: Number(b.partnerPayout) > 0 && Number(b.partnerPayout) !== Number(b.total) 
+          ? Number(b.partnerPayout) 
+          : Math.round((Number(b.total) || 0) * 0.9),
         createdAt: b.createdAt,
         specialRequests: b.specialRequests,
         cancellationReason: b.cancellationReason,
@@ -298,6 +311,8 @@ export function BookingsTab() {
         isFutureStay,
         propertyStatus: b.room?.property?.status,
         propertyIsArchived: b.room?.property?.isArchived,
+        voucherCode: b.voucherCode || null,
+        discountAmount: b.discountAmount || 0,
       };
     });
   }, [rawBookings]);
@@ -624,7 +639,7 @@ export function BookingsTab() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtVnd(booking.total)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-primary">{fmtVnd(booking.platformFee)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-primary">{fmtVnd(bookingPlatformFee(booking))}</td>
                 </tr>
               ))}
             </tbody>
@@ -775,7 +790,7 @@ function BookingDetailModal({ hotel, onClose, onRefresh, onNavigateToRoom }: { h
                       </span>
                     </div>
                   </td>
-                  <td className="p-4 text-right font-bold text-primary">{fmtVnd(booking.platformFee)}</td>
+                  <td className="p-4 text-right font-bold text-primary">{fmtVnd(bookingPlatformFee(booking))}</td>
                 </tr>
                 );
               })}
@@ -795,17 +810,29 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
   const [loading, setLoading] = useState(false);
   const { confirm, confirmDialog } = useConfirmDialog();
   const isCancelled = booking.status === 'cancelled';
+  const isCheckedOut = booking.status === 'checked_out';
   const isPaidOnline = booking.paymentStatus === 'paid';
   const isPendingCancel = booking.cancellationReason && booking.cancellationReason.startsWith("PENDING_CANCEL");
+  const isCurrentGuest = booking.isCurrentStay || booking.status === 'checked_in';
+  const canAdminCancelInitiative = !isCurrentGuest;
+  const hasAnyAction = isPendingCancel || !isPaidOnline || canAdminCancelInitiative;
   
+  // Trường hợp trả phòng sớm: khách đã check-in, admin duyệt hủy => status=checked_out, tiền chảy vào doanh thu
+  const isEarlyCheckout = isCheckedOut && booking.cancellationReason?.includes('Trả phòng sớm - không hoàn tiền');
+
   let displayPaymentStatus = '';
   let statusColor = 'text-amber-600';
   
-  if (isCancelled) {
+  if (isEarlyCheckout) {
+    statusColor = 'text-orange-600';
+    displayPaymentStatus = 'Trả phòng sớm (Tiền vào doanh thu - không hoàn)';
+  } else if (isCancelled) {
     statusColor = 'text-red-600';
-    displayPaymentStatus = isPaidOnline ? 'Đã hủy (He thong da hoan tien)' : 'Đã hủy (He thong tu dong huy)';
+    displayPaymentStatus = isPaidOnline
+      ? 'Đã hủy (Đã hoàn tiền)'
+      : 'Đã hủy (Không cần hoàn tiền)';
   } else if (isPaidOnline) {
-    displayPaymentStatus = 'Da thanh toan (Online)';
+    displayPaymentStatus = 'Đã thanh toán (Online)';
     statusColor = 'text-green-600';
   } else if (booking.isCompleted) {
     displayPaymentStatus = 'Đã thanh toán (Tại khách sạn)';
@@ -818,9 +845,15 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
   const paymentMethod = isCancelled ? `${initialMethod} (Đơn đã hủy)` : (isPaidOnline ? initialMethod : (booking.status === 'confirmed' || booking.isCompleted ? 'Tiền mặt / Quẹt thẻ (Tại khách sạn)' : 'Chưa xác định'));
 
   async function handleAction(action: string) {
+    let message = `Bạn muốn thực hiện thao tác "${action}" cho đơn ${booking.bookingCode}?`;
+    if (action === 'cancel' && isCurrentGuest) {
+      message = `⚠️ Khách đang ở trong phòng (đã check-in).\n\nDuyệt hủy này sẽ:\n- Đổi trạng thái thành \"Trả phòng sớm\"\n- Tiền KHAI NỘP vào doanh thu của admin & đối tác (không hoàn khách)\n- Hoàn lại phòng từ hôm nay để có thể tái đặt\n\nBạn xác nhận?`;
+    } else if (action === 'cancel' && isPaidOnline) {
+      message = `Hủy đơn ${booking.bookingCode}. Vì khách đã thanh toán online, hệ thống sẽ đánh dấu trạng thái hoàn tiền. Bạn xác nhận?`;
+    }
     const ok = await confirm({
       title: "Xác nhận thao tác booking",
-      message: `Bạn muốn thực hiện thao tác "${action}" cho đơn ${booking.bookingCode}?`,
+      message,
       confirmText: "Thực hiện",
       tone: action === "cancel" ? "danger" : "default",
     });
@@ -917,9 +950,15 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
                     <span className="text-muted-foreground">Tổng khách trả:</span>
                     <span className={isCancelled ? 'line-through' : 'font-bold'}>{fmtVnd(booking.total)}</span>
                   </div>
+                  {booking.voucherCode && (
+                    <div className="flex justify-between text-emerald-600 font-medium">
+                      <span>Voucher áp dụng ({booking.voucherCode}):</span>
+                      <span>-{fmtVnd(booking.discountAmount || 0)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-primary font-bold">
                     <span>Hoa hồng Admin:</span>
-                    <span className={isCancelled ? 'line-through opacity-50' : ''}>{fmtVnd(isCancelled ? 0 : booking.platformFee)}</span>
+                    <span className={isCancelled ? 'line-through opacity-50' : ''}>{fmtVnd(isCancelled ? 0 : bookingPlatformFee(booking))}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Tra cho Đối tác:</span>
@@ -943,45 +982,59 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
             </section>
           </div>
 
-          {!isCancelled && !booking.isCompleted && (
+          {!isCancelled && !booking.isCompleted && hasAnyAction && (
             <section className="space-y-2">
               <div className="text-[11px] font-bold uppercase text-muted-foreground tracking-wider">Hành động Admin</div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex gap-2 justify-center">
                 {isPendingCancel ? (
                   <>
                     <button 
                       disabled={loading}
                       onClick={() => handleAction('cancel')}
-                      className="py-2 text-xs font-bold border rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
+                      className="flex-1 py-2 text-xs font-bold border rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
                     >
                       Duyệt hủy
                     </button>
                     <button 
                       disabled={loading}
                       onClick={() => handleAction('reject_cancel')}
-                      className="py-2 text-xs font-bold border rounded hover:bg-slate-50 text-slate-700 border-slate-300 transition-colors"
+                      className="flex-1 py-2 text-xs font-bold border rounded hover:bg-slate-50 text-slate-700 border-slate-300 transition-colors"
                     >
                       Từ chối hủy
                     </button>
                   </>
                 ) : (
                   <>
-                    {!isPaidOnline && (
-                      <button 
-                        disabled={loading}
-                        onClick={() => handleAction('confirm_payment')}
-                        className="py-2 text-xs font-bold border rounded hover:bg-green-50 text-green-700 border-green-200 transition-colors"
-                      >
-                        Xác nhận thanh toán
-                      </button>
+                    {!isPaidOnline ? (
+                      <>
+                        <button 
+                          disabled={loading}
+                          onClick={() => handleAction('confirm_payment')}
+                          className="flex-1 py-2 text-xs font-bold border rounded hover:bg-green-50 text-green-700 border-green-200 transition-colors"
+                        >
+                          Xác nhận thanh toán
+                        </button>
+                        {canAdminCancelInitiative && (
+                          <button 
+                            disabled={loading}
+                            onClick={() => handleAction('cancel')}
+                            className="flex-1 py-2 text-xs font-bold border rounded hover:bg-red-50 text-red-700 border-red-200 transition-colors"
+                          >
+                            Hủy đơn hàng
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      canAdminCancelInitiative && (
+                        <button 
+                          disabled={loading}
+                          onClick={() => handleAction('cancel')}
+                          className="w-1/2 py-2 text-xs font-bold border rounded hover:bg-red-50 text-red-700 border-red-200 transition-colors"
+                        >
+                          Hủy đơn hàng
+                        </button>
+                      )
                     )}
-                    <button 
-                      disabled={loading}
-                      onClick={() => handleAction('cancel')}
-                      className="py-2 text-xs font-bold border rounded hover:bg-red-50 text-red-700 border-red-200 transition-colors"
-                    >
-                      Hủy đơn hàng
-                    </button>
                   </>
                 )}
               </div>
