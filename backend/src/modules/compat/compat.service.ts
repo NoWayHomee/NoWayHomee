@@ -497,7 +497,15 @@ export class CompatService {
         status: { not: user_status_enum.deleted },
       },
     };
-    if (status && status !== 'all') where.kycStatus = status as kyc_status_enum;
+
+    // Filter by user account lock status (suspended)
+    if (status === 'suspended') {
+      where.user = { deletedAt: null, status: user_status_enum.suspended };
+    } else if (status && status !== 'all') {
+      // Filter by kycStatus (pending, approved, rejected)
+      where.kycStatus = status as kyc_status_enum;
+    }
+
     const partners = await this.prisma.partnerProfile.findMany({
       where,
       include: {
@@ -514,6 +522,7 @@ export class CompatService {
         phone: partner.user.phone ?? '',
         hotelName: partner.businessName,
         status: partner.kycStatus,
+        userStatus: partner.user.status,
         rejectReason: '',
         createdAt: partner.createdAt,
         reviewedAt: partner.kycReviewedAt,
@@ -583,6 +592,59 @@ export class CompatService {
     return { ok: true };
   }
 
+  async lockPartner(userId: string) {
+    const id = this.parseId(userId, 'Ma doi tac khong hop le');
+    const partner = await this.prisma.partnerProfile.findFirst({
+      where: {
+        userId: id,
+        user: { deletedAt: null, status: { not: user_status_enum.deleted } },
+      },
+      select: { id: true, userId: true, businessName: true },
+    });
+    if (!partner) throw new NotFoundException('Khong tim thay doi tac');
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: user_status_enum.suspended },
+    });
+    await this.createNotification(this.prisma, {
+      userId: partner.userId,
+      type: 'partner_locked',
+      title: 'Tai khoan bi khoa',
+      body: `Tai khoan doi tac ${partner.businessName} da bi quan tri vien khoa. Vui long lien he de biet them chi tiet.`,
+      entityType: 'partner',
+      entityId: partner.id,
+      data: { partnerId: Number(partner.id), status: 'suspended' },
+    });
+    return { ok: true };
+  }
+
+  async unlockPartner(userId: string) {
+    const id = this.parseId(userId, 'Ma doi tac khong hop le');
+    const partner = await this.prisma.partnerProfile.findFirst({
+      where: {
+        userId: id,
+        user: { deletedAt: null, status: { not: user_status_enum.deleted } },
+      },
+      select: { id: true, userId: true, businessName: true },
+    });
+    if (!partner) throw new NotFoundException('Khong tim thay doi tac');
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: user_status_enum.active },
+    });
+    await this.createNotification(this.prisma, {
+      userId: partner.userId,
+      type: 'partner_unlocked',
+      title: 'Tai khoan da duoc mo khoa',
+      body: `Tai khoan doi tac ${partner.businessName} da duoc quan tri vien mo khoa. Ban co the dang nhap lai.`,
+      entityType: 'partner',
+      entityId: partner.id,
+      data: { partnerId: Number(partner.id), status: 'active' },
+    });
+    return { ok: true };
+  }
 
   /**
    * Hủy quyền đối tác: hạ userType về customer, giữ nguyên tài khoản.
