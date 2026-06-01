@@ -688,9 +688,6 @@ export class CompatService {
     });
     return { ok: true };
   }
-    });
-    return { ok: true };
-  }
 
   async updatePartner(id: string, body: AnyBody) {
     const data: Prisma.UserUpdateInput = {};
