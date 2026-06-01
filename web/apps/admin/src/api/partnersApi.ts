@@ -28,14 +28,19 @@ export const deletePartner = async (id: number) => {
 
 /** Approve a partner */
 export const approvePartner = async (id: number) => {
-  return await api(`/admin/partners/${id}/approve`, { method: "POST" });
+  return await api(`/admin/partners/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "active" })
+  });
 };
 
 /** Reject a partner with reason */
 export const rejectPartner = async (id: number, reason: string) => {
-  return await api(`/admin/partners/${id}/reject`, {
-    method: "POST",
-    body: JSON.stringify({ reason })
+  return await api(`/admin/partners/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "rejected" })
   });
 };
 

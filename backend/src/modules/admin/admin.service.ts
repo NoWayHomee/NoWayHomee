@@ -134,6 +134,150 @@ export class AdminService {
     `;
   }
 
+  async fetchBookingReport() {
+    const properties = await this.prisma.property.findMany({
+      include: {
+        partner: {
+          include: {
+            user: true,
+          },
+        },
+        bookings: {
+          include: {
+            customer: true,
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
+      },
+    });
+
+    const report = properties.map((property) => {
+      const bookingsList = property.bookings;
+      const totalBookings = bookingsList.length;
+
+      let earnedRevenue = 0;
+      let pendingRevenue = 0;
+      let earnedCommission = 0;
+      let pendingCommission = 0;
+      let earnedPartnerPayout = 0;
+      let pendingPartnerPayout = 0;
+
+      const mappedBookings = bookingsList.map((booking) => {
+        const total = Number(booking.totalAmount);
+        const platformFee = Number(booking.platformFeeAmount);
+        const partnerPayout = Number(booking.partnerPayoutAmount);
+
+        const isPaid = booking.paymentStatus === 'paid';
+        const isCancelled = booking.status === 'cancelled';
+
+        if (!isCancelled) {
+          if (isPaid) {
+            earnedRevenue += total;
+            earnedCommission += platformFee;
+            earnedPartnerPayout += partnerPayout;
+          } else {
+            pendingRevenue += total;
+            pendingCommission += platformFee;
+            pendingPartnerPayout += partnerPayout;
+          }
+        }
+
+        const today = new Date();
+        const checkIn = new Date(booking.checkInDate);
+        const checkOut = new Date(booking.checkOutDate);
+
+        const isCompleted = booking.status === 'checked_out' || (booking.status === 'confirmed' && today > checkOut);
+        const isCurrentStay = booking.status === 'checked_in' || (booking.status === 'confirmed' && today >= checkIn && today <= checkOut);
+        const isFutureStay = booking.status === 'confirmed' && today < checkIn;
+
+        return {
+          id: Number(booking.id),
+          bookingCode: booking.bookingCode,
+          customerName: booking.customer.fullName,
+          customerEmail: booking.customer.email,
+          customerPhone: booking.customer.phone,
+          priceLabel: booking.totalAmount.toString() + ' ' + booking.currency,
+          checkInDate: booking.checkInDate.toISOString(),
+          checkOutDate: booking.checkOutDate.toISOString(),
+          nights: booking.numNights,
+          adults: booking.numAdults,
+          children: booking.numChildren,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+          total,
+          platformFee,
+          partnerPayout,
+          createdAt: booking.createdAt.toISOString(),
+          specialRequests: booking.specialRequests,
+          cancellationReason: booking.cancellationReason,
+          isCompleted,
+          isCurrentStay,
+          isFutureStay,
+        };
+      });
+
+      const currentStayCount = mappedBookings.filter(b => b.isCurrentStay).length;
+
+      return {
+        propertyId: Number(property.id),
+        propertyName: property.name,
+        city: property.city,
+        address: property.address,
+        partnerHotelName: property.name,
+        partnerEmail: property.partner?.user?.email ?? null,
+        propertyStatus: property.status,
+        isArchived: !!property.deletedAt,
+        archivedLabel: property.deletedAt ? 'Archived' : null,
+        isActiveHotel: property.status === 'active' && !property.deletedAt,
+        currentStayCount,
+        totalBookings,
+        earnedRevenue,
+        pendingRevenue,
+        earnedCommission,
+        pendingCommission,
+        earnedPartnerPayout,
+        pendingPartnerPayout,
+        bookings: mappedBookings,
+      };
+    });
+
+    return report;
+  }
+
+  async markBookingPaid(adminUser: AuthenticatedUser, bookingIdStr: string) {
+    const id = this.parseBigIntParam(bookingIdStr, 'bookingId');
+    return this.prisma.booking.update({
+      where: { id },
+      data: {
+        paymentStatus: 'paid',
+      },
+    });
+  }
+
+  async cancelBooking(adminUser: AuthenticatedUser, bookingIdStr: string) {
+    const id = this.parseBigIntParam(bookingIdStr, 'bookingId');
+    return this.prisma.booking.update({
+      where: { id },
+      data: {
+        status: 'cancelled',
+        cancelledById: BigInt(adminUser.id),
+        cancelledAt: new Date(),
+      },
+    });
+  }
+
+  async rejectCancelBooking(adminUser: AuthenticatedUser, bookingIdStr: string) {
+    const id = this.parseBigIntParam(bookingIdStr, 'bookingId');
+    return this.prisma.booking.update({
+      where: { id },
+      data: {
+        status: 'confirmed',
+      },
+    });
+  }
+
   private parseBigIntParam(value: string, paramName: string): bigint {
     if (!/^\d+$/.test(value)) {
       throw new NotFoundException(`${paramName} must be a positive integer`);
