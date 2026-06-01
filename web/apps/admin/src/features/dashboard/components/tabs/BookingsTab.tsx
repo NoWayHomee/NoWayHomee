@@ -994,7 +994,9 @@ function SingleBookingDetailModal({ booking, onClose, onRefresh }: { booking: Bo
           </button>
         </div>
       </div>
-      {confirmDialog}
+      <div onClick={(e) => e.stopPropagation()}>
+        {confirmDialog}
+      </div>
     </div>
   );
 }
