@@ -554,6 +554,12 @@ export class BookingsService {
       throw new BadRequestException('Booking cannot be cancelled at this stage');
     }
 
+    // Direct cancellation for unpaid bookings
+    if (booking.paymentStatus === 'unpaid') {
+      await this.cancel(user, bookingIdParam);
+      return { ok: true, status: 'cancelled' };
+    }
+
     await this.prisma.booking.update({
       where: { id: bookingId },
       data: {
