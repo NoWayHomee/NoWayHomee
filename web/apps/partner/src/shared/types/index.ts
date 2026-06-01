@@ -92,6 +92,8 @@ export type PartnerNotification = {
   title: string;
   body: string | null;
   type: string;
+  entityType?: string | null;
+  entityId?: number | null;
   createdAt: string;
   isRead: boolean;
 };

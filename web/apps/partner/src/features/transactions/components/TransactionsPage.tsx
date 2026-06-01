@@ -64,11 +64,9 @@ export function TransactionsPage() {
   const [txAmount, setTxAmount] = useState("");
   const [isProcessingTx, setIsProcessingTx] = useState(false);
 
-  // Invoice & Debt Modal
+  // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
-  const [showDebtModal, setShowDebtModal] = useState(false);
-  const [debtBooking, setDebtBooking] = useState<any>(null);
   const [txError, setTxError] = useState("");
 
   const loadStatus = async () => {
@@ -147,29 +145,6 @@ export function TransactionsPage() {
       await loadStatus();
     } catch (err: any) {
       setTxError(err.message || "Giao dịch ví thất bại");
-    } finally {
-      setIsProcessingTx(false);
-    }
-  };
-
-  const payCommissionDebt = async () => {
-    const amount = Number(debtBooking?.commissionOwed || 0);
-    if (!amount || amount <= 0) {
-      setTxError("Không xác định được số tiền hoa hồng cần thanh toán");
-      return;
-    }
-    setIsProcessingTx(true);
-    setTxError("");
-    try {
-      await api("/partner/nowayhomepay/transaction", {
-        method: "POST",
-        body: JSON.stringify({ type: "DEPOSIT", amount }),
-      });
-      setShowDebtModal(false);
-      setDebtBooking(null);
-      await loadStatus();
-    } catch (err: any) {
-      setTxError(err.message || "Không thể thanh toán hoa hồng");
     } finally {
       setIsProcessingTx(false);
     }
@@ -288,7 +263,7 @@ export function TransactionsPage() {
           </div>
           <div>
             <h4 className="font-bold text-sm">Cảnh báo: Số dư ví đối tác đang bị âm!</h4>
-            <p className="mt-1 text-xs text-red-700">Ví của bạn hiện đang có số dư âm là <span className="font-bold text-red-900">{status.walletBalance?.toLocaleString("vi-VN")} đ</span> do khấu trừ hoa hồng của các đơn thanh toán tại chỗ. Vui lòng thanh toán công nợ hoặc nạp tiền để tiếp tục hiển thị khách sạn trên kết quả tìm kiếm.</p>
+            <p className="mt-1 text-xs text-red-700">Ví của bạn hiện đang có số dư âm là <span className="font-bold text-red-900">{status.walletBalance?.toLocaleString("vi-VN")} đ</span> do hệ thống tự động khấu trừ hoa hồng của các đơn thanh toán tại chỗ.</p>
           </div>
         </div>
       )}
@@ -439,13 +414,13 @@ export function TransactionsPage() {
                         ) : commissionOwed > 0 ? (
                           <button
                             onClick={() => {
-                              setDebtBooking({ ...b, commissionOwed });
-                              setShowDebtModal(true);
+                              setSelectedInvoice({ ...b, type: "COMMISSION" });
+                              setShowInvoiceModal(true);
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-red-600 hover:bg-red-100 transition border border-red-200 shadow-sm"
+                            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200 shadow-sm"
                           >
-                            <AlertCircle size={12} />
-                            <span className="font-bold text-[10px]">Hoa hồng cần nộp: {commissionOwed.toLocaleString("vi-VN")} đ</span>
+                            <Check size={12} />
+                            <span className="font-bold text-[10px]">Đã khấu trừ hoa hồng: {commissionOwed.toLocaleString("vi-VN")} đ</span>
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-slate-400 font-semibold text-[10px] bg-slate-50 px-2.5 py-1.5 rounded-md">
@@ -519,50 +494,6 @@ export function TransactionsPage() {
         </div>
       )}
 
-      {/* Debt Payment Modal */}
-      {showDebtModal && debtBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600 mb-5 border border-red-100">
-              <AlertCircle size={28} />
-            </div>
-            <h2 className="text-center text-xl font-black text-slate-900 tracking-tight">
-              Thanh toán hoa hồng
-            </h2>
-            <p className="mt-3 text-center text-[11px] text-slate-500 leading-relaxed px-2">
-              Booking <strong className="text-indigo-600">{debtBooking.bookingCode}</strong> được khách thanh toán trực tiếp tại khách sạn. Khoản hoa hồng bên dưới được lấy từ dữ liệu booking, không tính cứng trên giao diện.
-            </p>
-            <div className="mt-6 rounded-2xl bg-slate-50 p-5 border border-slate-100">
-              <div className="flex justify-between text-xs mb-3">
-                <span className="text-slate-500 font-medium">Khách đã trả (Gross):</span>
-                <span className="font-bold text-slate-700">{debtBooking.customerPay.toLocaleString("vi-VN")} đ</span>
-              </div>
-              <div className="flex justify-between text-sm pt-3 border-t border-slate-200/60">
-                <span className="font-bold text-slate-800">Cần thanh toán:</span>
-                <span className="font-black text-red-600 text-base">{Number(debtBooking.commissionOwed || 0).toLocaleString("vi-VN")} đ</span>
-              </div>
-            </div>
-            {txError && <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{txError}</div>}
-            
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => setShowDebtModal(false)}
-                className="flex-1 rounded-xl bg-slate-100 py-3 text-xs font-bold text-slate-500 hover:bg-slate-200 transition"
-              >
-                Để sau
-              </button>
-              <button
-                onClick={payCommissionDebt}
-                disabled={isProcessingTx}
-                className="flex-[2] flex items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-xs font-bold text-white hover:bg-red-700 shadow-lg shadow-red-600/25 transition disabled:opacity-70"
-              >
-                {isProcessingTx ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : "Thanh toán ngay"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Invoice Modal */}
       {showInvoiceModal && selectedInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
@@ -606,7 +537,7 @@ export function TransactionsPage() {
               
               <div className="mt-6 border-t-2 border-dashed border-slate-200 pt-5 flex justify-between items-center">
                 <span className="text-[11px] font-black text-slate-900 uppercase tracking-wider">
-                  {selectedInvoice.type === "EARNING" ? "Thực nhận về ví" : "Đã nộp hoa hồng"}
+                  {selectedInvoice.type === "EARNING" ? "Thực nhận về ví" : "Đã khấu trừ hoa hồng"}
                 </span>
                 <span className={`text-xl font-black tracking-tight ${selectedInvoice.type === "EARNING" ? "text-emerald-600" : "text-slate-800"}`}>
                   {selectedInvoice.type === "EARNING" ? selectedInvoice.systemPayout.toLocaleString("vi-VN") : selectedInvoice.commissionDeducted.toLocaleString("vi-VN")} đ

@@ -26,6 +26,7 @@ type BookingItem = {
   partnerPayout: number;
   createdAt: string;
   specialRequests: string | null;
+  cancellationReason?: string | null;
   isCompleted: boolean;
   isCurrentStay: boolean;
   isFutureStay: boolean;

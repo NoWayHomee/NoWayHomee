@@ -228,6 +228,10 @@ export function TransactionsTab({ user }: { user?: User | null }) {
     }
   };
 
+  const handlePayTax = (tax: TaxRecord) => {
+    setTaxToPay(tax);
+  };
+
   if (loading || !data) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">

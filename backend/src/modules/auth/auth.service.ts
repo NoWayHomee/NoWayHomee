@@ -103,13 +103,21 @@ export class AuthService {
       });
 
       if (registerDto.userType === user_type_enum.partner) {
-        await tx.partnerProfile.create({
+        const partner = await tx.partnerProfile.create({
           data: {
             userId: createdUser.id,
             businessName: registerDto.businessName ?? registerDto.fullName,
             businessType:
               registerDto.businessType ?? business_type_enum.individual,
           },
+        });
+        await this.notifyAdmins(tx, {
+          type: 'new_partner_registration',
+          title: `Doi tac cho duyet: ${partner.businessName}`,
+          body: `${createdUser.fullName} (${createdUser.email}) dang cho xet duyet ho so.`,
+          entityType: 'partner',
+          entityId: createdUser.id,
+          data: { partnerId: Number(partner.id), userId: Number(createdUser.id) },
         });
       }
 
@@ -480,12 +488,20 @@ export class AuthService {
         where: { userId: parsedId },
       });
       if (!existing) {
-        await tx.partnerProfile.create({
+        const partner = await tx.partnerProfile.create({
           data: {
             userId: parsedId,
             businessName: data.businessName || user.fullName,
             businessType: business_type_enum.individual,
           },
+        });
+        await this.notifyAdmins(tx, {
+          type: 'new_partner_registration',
+          title: `Doi tac cho duyet: ${partner.businessName}`,
+          body: `${updated.fullName} (${updated.email}) dang cho xet duyet ho so.`,
+          entityType: 'partner',
+          entityId: updated.id,
+          data: { partnerId: Number(partner.id), userId: Number(updated.id) },
         });
       }
 
@@ -762,6 +778,56 @@ export class AuthService {
     if (existingAdmin) return user_type_enum.admin;
 
     return user_type_enum.customer;
+  }
+
+  private async notifyAdmins(
+    db: {
+      user: { findMany: PrismaService['user']['findMany'] };
+      $executeRaw: PrismaService['$executeRaw'];
+    },
+    notification: {
+      type: string;
+      title: string;
+      body?: string | null;
+      data?: unknown;
+      entityType?: string | null;
+      entityId?: bigint | null;
+    },
+  ) {
+    const admins = await db.user.findMany({
+      where: {
+        userType: user_type_enum.admin,
+        deletedAt: null,
+        status: { not: user_status_enum.deleted },
+      },
+      select: { id: true },
+    });
+
+    const dataJson = JSON.stringify(notification.data ?? {});
+    for (const admin of admins) {
+      await db.$executeRaw`
+        INSERT INTO notifications (
+          user_id,
+          type,
+          channel,
+          title,
+          body,
+          data,
+          entity_type,
+          entity_id
+        )
+        VALUES (
+          ${admin.id},
+          ${notification.type},
+          'in_app',
+          ${notification.title},
+          ${notification.body ?? null},
+          ${dataJson}::jsonb,
+          ${notification.entityType ?? null},
+          ${notification.entityId ?? null}
+        )
+      `;
+    }
   }
 }
 

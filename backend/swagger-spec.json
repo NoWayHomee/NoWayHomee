@@ -1972,7 +1972,16 @@
     "/api/notifications/{id}/read": {
       "post": {
         "operationId": "CompatController_markRead",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -2000,7 +2009,16 @@
     "/api/notifications/{id}": {
       "delete": {
         "operationId": "CompatController_deleteNotification",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""

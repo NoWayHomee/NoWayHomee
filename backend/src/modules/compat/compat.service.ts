@@ -25,6 +25,29 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 type AnyBody = Record<string, unknown>;
+type NotificationRow = {
+  id: bigint;
+  type: string;
+  channel: string;
+  title: string;
+  body: string | null;
+  data: unknown;
+  entityType: string | null;
+  entityId: bigint | null;
+  isRead: boolean;
+  readAt: Date | null;
+  createdAt: Date;
+};
+type NotificationInput = {
+  userId: bigint;
+  type: string;
+  channel?: string;
+  title: string;
+  body?: string | null;
+  data?: unknown;
+  entityType?: string | null;
+  entityId?: bigint | null;
+};
 type CompatBooking = Prisma.BookingGetPayload<Record<string, never>> & {
   customer?: Prisma.UserGetPayload<Record<string, never>>;
   property?: Prisma.PropertyGetPayload<Record<string, never>>;
@@ -319,6 +342,14 @@ export class CompatService {
       await this.upsertRoomTypes(tx, property.id, payload, user.id);
       await this.upsertPolicy(tx, property.id, body);
       await this.saveLegacyData(tx, property.id, body, user.id);
+      await this.notifyAdmins(tx, {
+        type: 'property_review',
+        title: `Khach san cho duyet: ${payload.name}`,
+        body: `${partner.businessName} da gui khach san can duyet.`,
+        entityType: 'property',
+        entityId: property.id,
+        data: { propertyId: Number(property.id), partnerId: Number(partner.id) },
+      });
       return property;
     });
 
@@ -334,6 +365,14 @@ export class CompatService {
     await this.ensurePartnerOwnsProperty(partner.id, propertyId);
     await this.ensurePropertyCanBeChanged(propertyId);
     await this.updateRoomData(propertyId, body, property_status_enum.pending_review, user);
+    await this.notifyAdmins(this.prisma, {
+      type: 'property_update_request',
+      title: 'Yeu cau cap nhat khach san',
+      body: `${partner.businessName} da gui thay doi khach san can duyet.`,
+      entityType: 'property',
+      entityId: propertyId,
+      data: { propertyId: Number(propertyId), partnerId: Number(partner.id) },
+    });
     return { ok: true, message: 'Da cap nhat thong tin khach san' };
   }
 
@@ -369,6 +408,14 @@ export class CompatService {
         reviewerId: null,
       },
     });
+    await this.notifyAdmins(this.prisma, {
+      type: 'property_restore_request',
+      title: 'Yeu cau khoi phuc khach san',
+      body: `${partner.businessName} da gui yeu cau khoi phuc khach san.`,
+      entityType: 'property',
+      entityId: propertyId,
+      data: { propertyId: Number(propertyId), partnerId: Number(partner.id) },
+    });
     return { ok: true, message: 'Da gui yeu cau khoi phuc khach san cho admin duyet' };
   }
 
@@ -393,13 +440,25 @@ export class CompatService {
     id: string,
     status: 'active' | 'rejected',
   ) {
-    await this.prisma.property.update({
+    const property = await this.prisma.property.update({
       where: { id: this.parseId(id, 'Ma khach san khong hop le') },
       data: {
         status,
         reviewerId: this.parseId(user.id, 'Ma nguoi dung khong hop le'),
         reviewedAt: new Date(),
       },
+      include: { partner: true },
+    });
+    await this.createNotification(this.prisma, {
+      userId: property.partner.userId,
+      type: status === 'active' ? 'property_approved' : 'property_rejected',
+      title: status === 'active' ? 'Khach san da duoc duyet' : 'Khach san bi tu choi',
+      body: status === 'active'
+        ? `${property.name} da duoc phe duyet va co the mo ban.`
+        : `${property.name} chua duoc phe duyet. Vui long kiem tra va cap nhat thong tin.`,
+      entityType: 'property',
+      entityId: property.id,
+      data: { propertyId: Number(property.id), status },
     });
     return { ok: true };
   }
@@ -473,13 +532,24 @@ export class CompatService {
           status: { not: user_status_enum.deleted },
         },
       },
-      select: { id: true },
+      select: { id: true, userId: true, businessName: true },
     });
     if (!partner) throw new NotFoundException('Khong tim thay doi tac');
 
     await this.prisma.partnerProfile.update({
       where: { id: partner.id },
       data: { kycStatus: status },
+    });
+    await this.createNotification(this.prisma, {
+      userId: partner.userId,
+      type: status === 'approved' ? 'partner_approved' : 'partner_rejected',
+      title: status === 'approved' ? 'Ho so doi tac da duoc duyet' : 'Ho so doi tac bi tu choi',
+      body: status === 'approved'
+        ? `${partner.businessName} da duoc phe duyet. Ban co the quan ly khach san.`
+        : `${partner.businessName} chua duoc phe duyet. Vui long cap nhat ho so.`,
+      entityType: 'partner',
+      entityId: partner.id,
+      data: { partnerId: Number(partner.id), status },
     });
     return { ok: true };
   }
@@ -744,31 +814,12 @@ export class CompatService {
       this.prisma.booking.findMany(),
     ]);
 
-    // Doanh thu gộp (Thực nhận + Đang chờ) giống như trang đặt phòng, NHƯNG loại bỏ các booking đang lưu trú (isCurrentStay)
-    const completedBookings = periodBookings.filter((booking) => {
-      const isCancelledOrNoShow = booking.status === 'cancelled' || booking.status === 'no_show';
-      if (isCancelledOrNoShow) return false;
-
-      const checkIn = this.toDateKey(booking.checkInDate);
-      const checkOut = this.toDateKey(booking.checkOutDate);
-      const isCurrentStay =
-        booking.status === 'checked_in' ||
-        (['pending', 'confirmed'].includes(booking.status) && checkIn <= today && checkOut > today);
-
-      return !isCurrentStay;
-    });
-    const prevCompletedBookings = prevPeriodBookings.filter((booking) => {
-      const isCancelledOrNoShow = booking.status === 'cancelled' || booking.status === 'no_show';
-      if (isCancelledOrNoShow) return false;
-
-      const checkIn = this.toDateKey(booking.checkInDate);
-      const checkOut = this.toDateKey(booking.checkOutDate);
-      const isCurrentStay =
-        booking.status === 'checked_in' ||
-        (['pending', 'confirmed'].includes(booking.status) && checkIn <= today && checkOut > today);
-
-      return !isCurrentStay;
-    });
+    const completedBookings = periodBookings.filter((booking) =>
+      this.isBookingCompletedForDashboard(booking, today),
+    );
+    const prevCompletedBookings = prevPeriodBookings.filter((booking) =>
+      this.isBookingCompletedForDashboard(booking, today),
+    );
     const activeBookings = allBookings.filter((booking) => {
       const checkIn = this.toDateKey(booking.checkInDate);
       const checkOut = this.toDateKey(booking.checkOutDate);
@@ -811,7 +862,7 @@ export class CompatService {
           city: property.city,
           revenue: rows.reduce((sum, booking) => sum + Number(booking.totalAmount), 0),
           orders: rows.length,
-          commission: rows.reduce((sum, booking) => sum + Number(booking.platformFeeAmount), 0),
+          commission: rows.reduce((sum, booking) => sum + this.bookingPlatformFee(booking), 0),
         };
       })
       .sort((a, b) => b.revenue - a.revenue)
@@ -1303,47 +1354,70 @@ export class CompatService {
   }
 
   async notifications(user: AuthenticatedUser) {
-    const rows = await this.legacyRows('notifications');
-    const visibleRows = rows.filter((row) => String(row.user_id ?? '') === user.id);
-    const syntheticRows = await this.syntheticNotifications(user);
+    const rows = await this.prisma.$queryRaw<NotificationRow[]>`
+      SELECT
+        id,
+        type,
+        channel,
+        title,
+        body,
+        data,
+        entity_type AS "entityType",
+        entity_id AS "entityId",
+        is_read AS "isRead",
+        read_at AS "readAt",
+        created_at AS "createdAt"
+      FROM notifications
+      WHERE user_id = ${this.parseId(user.id, 'Ma nguoi dung khong hop le')}
+      ORDER BY created_at DESC, id DESC
+    `;
     return {
-      notifications: [
-        ...syntheticRows,
-        ...visibleRows.map((row) => ({
-          id: row.id,
-          type: row.type,
-          channel: row.channel,
-          title: row.title,
-          body: row.body,
-          data: row.data,
-          entityType: row.entity_type,
-          entityId: row.entity_id,
-          isRead: Boolean(Number(row.is_read ?? 0)),
-          readAt: row.read_at,
-          createdAt: row.created_at,
-        })),
-      ],
+      notifications: rows.map((row) => this.mapNotificationRow(row)),
     };
   }
 
   async unreadCount(user: AuthenticatedUser) {
-    const rows = await this.legacyRows('notifications');
-    const syntheticRows = await this.syntheticNotifications(user);
+    const rows = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM notifications
+      WHERE user_id = ${this.parseId(user.id, 'Ma nguoi dung khong hop le')}
+        AND is_read = FALSE
+    `;
     return {
-      count: rows.filter((row) => String(row.user_id ?? '') === user.id && !Number(row.is_read ?? 0)).length
-        + syntheticRows.filter((row) => !row.isRead).length,
+      count: Number(rows[0]?.count ?? 0),
     };
   }
 
-  async markNotificationRead() {
+  async markNotificationRead(user: AuthenticatedUser, id: string) {
+    const notificationId = this.parseId(id, 'Ma thong bao khong hop le');
+    await this.prisma.$executeRaw`
+      UPDATE notifications
+      SET is_read = TRUE,
+          read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+      WHERE id = ${notificationId}
+        AND user_id = ${this.parseId(user.id, 'Ma nguoi dung khong hop le')}
+    `;
     return { ok: true };
   }
 
-  async markAllNotificationsRead() {
+  async markAllNotificationsRead(user: AuthenticatedUser) {
+    await this.prisma.$executeRaw`
+      UPDATE notifications
+      SET is_read = TRUE,
+          read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+      WHERE user_id = ${this.parseId(user.id, 'Ma nguoi dung khong hop le')}
+        AND is_read = FALSE
+    `;
     return { ok: true };
   }
 
-  async deleteNotification() {
+  async deleteNotification(user: AuthenticatedUser, id: string) {
+    const notificationId = this.parseId(id, 'Ma thong bao khong hop le');
+    await this.prisma.$executeRaw`
+      DELETE FROM notifications
+      WHERE id = ${notificationId}
+        AND user_id = ${this.parseId(user.id, 'Ma nguoi dung khong hop le')}
+    `;
     return { ok: true };
   }
 
@@ -1399,57 +1473,67 @@ export class CompatService {
     throw new BadRequestException('Loai giao dich khong hop le');
   }
 
-  private async syntheticNotifications(user: AuthenticatedUser) {
-    if (user.userType !== user_type_enum.admin) return [];
-    const [pendingPartners, pendingProperties] = await Promise.all([
-      this.prisma.partnerProfile.findMany({
-        where: {
-          kycStatus: kyc_status_enum.pending,
-          user: {
-            deletedAt: null,
-            status: { not: user_status_enum.deleted },
-          },
-        },
-        include: { user: true },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      this.prisma.property.findMany({
-        where: { status: property_status_enum.pending_review, deletedAt: null },
-        include: { partner: { include: { user: true } } },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-    ]);
+  private mapNotificationRow(row: NotificationRow) {
+    return {
+      id: Number(row.id),
+      type: row.type,
+      channel: row.channel,
+      title: row.title,
+      body: row.body,
+      data: row.data,
+      entityType: row.entityType,
+      entityId: row.entityId === null ? null : Number(row.entityId),
+      isRead: row.isRead,
+      readAt: row.readAt,
+      createdAt: row.createdAt,
+    };
+  }
 
-    return [
-      ...pendingPartners.map((partner) => ({
-        id: 7_000_000 + Number(partner.id),
-        type: 'new_partner_registration',
-        channel: 'system',
-        title: `Đối tác chờ duyệt: ${partner.businessName}`,
-        body: `${partner.user.fullName} (${partner.user.email}) đang chờ xét duyệt hồ sơ.`,
-        data: null,
-        entityType: 'partner',
-        entityId: Number(partner.userId),
-        isRead: false,
-        readAt: null,
-        createdAt: partner.createdAt,
-      })),
-      ...pendingProperties.map((property) => ({
-        id: 8_000_000 + Number(property.id),
-        type: 'property_review',
-        channel: 'system',
-        title: `Khách sạn chờ duyệt: ${property.name}`,
-        body: `${property.partner.businessName} (${property.partner.user.email}) đã gửi khách sạn cần duyệt.`,
-        data: null,
-        entityType: 'property',
-        entityId: Number(property.id),
-        isRead: false,
-        readAt: null,
-        createdAt: property.createdAt,
-      })),
-    ];
+  private async notifyAdmins(
+    db: Prisma.TransactionClient | PrismaService,
+    notification: Omit<NotificationInput, 'userId'>,
+  ) {
+    const admins = await db.user.findMany({
+      where: {
+        userType: user_type_enum.admin,
+        deletedAt: null,
+        status: { not: user_status_enum.deleted },
+      },
+      select: { id: true },
+    });
+
+    for (const admin of admins) {
+      await this.createNotification(db, { ...notification, userId: admin.id });
+    }
+  }
+
+  private async createNotification(
+    db: Prisma.TransactionClient | PrismaService,
+    notification: NotificationInput,
+  ) {
+    const dataJson = JSON.stringify(notification.data ?? {});
+    await db.$executeRaw`
+      INSERT INTO notifications (
+        user_id,
+        type,
+        channel,
+        title,
+        body,
+        data,
+        entity_type,
+        entity_id
+      )
+      VALUES (
+        ${notification.userId},
+        ${notification.type},
+        ${notification.channel ?? 'in_app'},
+        ${notification.title},
+        ${notification.body ?? null},
+        ${dataJson}::jsonb,
+        ${notification.entityType ?? null},
+        ${notification.entityId ?? null}
+      )
+    `;
   }
 
   private async legacyRows(sourceTable: string): Promise<AnyBody[]> {
@@ -2088,10 +2172,11 @@ export class CompatService {
       status: booking.status,
       paymentStatus: booking.paymentStatus,
       total: Number(booking.totalAmount),
-      platformFee: Number(booking.platformFeeAmount),
+      platformFee: this.bookingPlatformFee(booking),
       partnerPayout: Number(booking.partnerPayoutAmount),
       createdAt: booking.createdAt,
       specialRequests: booking.specialRequests ?? '',
+      cancellationReason: booking.cancellationReason ?? null,
       isCompleted,
       isCurrentStay,
       isFutureStay,
@@ -2104,8 +2189,20 @@ export class CompatService {
   ) {
     return (
       booking.status !== 'cancelled' &&
+      booking.status !== 'no_show' &&
+      booking.status !== 'checked_in' &&
       (booking.status === 'checked_out' || this.toDateKey(booking.checkOutDate) <= today)
     );
+  }
+
+  private bookingPlatformFee(
+    booking: Pick<CompatBooking, 'platformFeeAmount' | 'partnerPayoutAmount' | 'totalAmount'>,
+  ) {
+    const storedFee = Number(booking.platformFeeAmount);
+    if (storedFee > 0) return storedFee;
+
+    const inferredFee = Number(booking.totalAmount) - Number(booking.partnerPayoutAmount);
+    return inferredFee > 0 ? inferredFee : 0;
   }
 
   private isBookingActiveForDashboard(
@@ -2381,7 +2478,7 @@ export class CompatService {
 
         if (isCompleted) {
           const totalAmount = Number(booking.totalAmount);
-          const platformFeeAmount = Number(booking.platformFeeAmount);
+          const platformFeeAmount = this.bookingPlatformFee(booking);
           const partnerPayoutAmount = Number(booking.partnerPayoutAmount);
 
           if (booking.paymentStatus === 'paid') {
@@ -2500,7 +2597,7 @@ export class CompatService {
 
         if (isCompleted) {
           const totalAmount = Number(booking.totalAmount);
-          const platformFeeAmount = Number(booking.platformFeeAmount);
+          const platformFeeAmount = this.bookingPlatformFee(booking);
           const partnerPayoutAmount = Number(booking.partnerPayoutAmount);
 
           if (booking.paymentStatus === 'paid') {
@@ -2591,7 +2688,7 @@ export class CompatService {
             (booking.status === 'checked_out' || checkOut <= today);
 
           if (isCompleted) {
-            const platformFeeAmount = Number(booking.platformFeeAmount);
+            const platformFeeAmount = this.bookingPlatformFee(booking);
             const partnerPayoutAmount = Number(booking.partnerPayoutAmount);
 
             if (booking.paymentStatus === 'paid') {
@@ -2654,7 +2751,7 @@ export class CompatService {
 
         if (isCompleted) {
           const totalAmount = Number(booking.totalAmount);
-          const platformFeeAmount = Number(booking.platformFeeAmount);
+          const platformFeeAmount = this.bookingPlatformFee(booking);
           const partnerPayoutAmount = Number(booking.partnerPayoutAmount);
 
           platformFeeRevenue += platformFeeAmount;
@@ -2782,7 +2879,7 @@ export class CompatService {
           (booking.status === 'checked_out' || checkOut <= today);
 
         if (isCompleted) {
-          const platformFeeAmount = Number(booking.platformFeeAmount);
+          const platformFeeAmount = this.bookingPlatformFee(booking);
           const monthKey = booking.createdAt.toISOString().slice(0, 7);
           monthlyCommissions[monthKey] = (monthlyCommissions[monthKey] || 0) + platformFeeAmount;
         }

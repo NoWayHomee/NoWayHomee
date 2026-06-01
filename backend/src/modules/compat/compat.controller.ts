@@ -451,18 +451,18 @@ export class CompatController {
   }
 
   @Post('notifications/:id/read')
-  markRead() {
-    return this.compatService.markNotificationRead();
+  markRead(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.compatService.markNotificationRead(user, id);
   }
 
   @Post('notifications/read-all')
-  markAllRead() {
-    return this.compatService.markAllNotificationsRead();
+  markAllRead(@CurrentUser() user: AuthenticatedUser) {
+    return this.compatService.markAllNotificationsRead(user);
   }
 
   @Delete('notifications/:id')
-  deleteNotification() {
-    return this.compatService.deleteNotification();
+  deleteNotification(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.compatService.deleteNotification(user, id);
   }
 
   @Public()
