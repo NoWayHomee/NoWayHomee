@@ -64,7 +64,8 @@ type CheckoutForm = z.infer<typeof checkoutSchema>;
 const SPECIAL_REQUESTS = [
   'Phòng trên tầng cao',
   'Phòng yên tĩnh',
-  'Gần/Xa thang máy',
+  'Gần thang máy',
+  'Xa thang máy',
   'Thuê xe máy/ô tô',
   'Gửi hành lý trước',
   'Đón sân bay',
@@ -98,12 +99,9 @@ export default function PaymentScreen() {
     enabled: !!propertyId
   });
 
-  const savedActiveVouchers = useMemo(() => {
-    if (!activeVouchers) return [];
-    return activeVouchers.filter((v: any) => 
-      savedVouchers.some(savedCode => savedCode.toUpperCase().trim() === v.code.toUpperCase().trim())
-    );
-  }, [activeVouchers, savedVouchers]);
+  const availableVouchers = useMemo(() => {
+    return activeVouchers || [];
+  }, [activeVouchers]);
 
   // --- Lấy dữ liệu ngày & khách từ Zustand Store ---
   const { checkInDate, checkOutDate, guests } = useSearchStore();
@@ -464,13 +462,14 @@ export default function PaymentScreen() {
         {/* ===== MÃ GIẢM GIÁ ===== */}
         <Text style={styles.sectionTitle}>Mã giảm giá</Text>
         <View style={styles.sectionCard}>
-          {savedActiveVouchers.length > 0 ? (
+          {availableVouchers.length > 0 ? (
             <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
               <Text style={{ ...Typography.caption, color: Colors.light.textSecondary, marginBottom: 4 }}>
-                Chọn voucher đã lưu của bạn:
+                Chọn mã giảm giá phù hợp cho chỗ nghỉ này:
               </Text>
-              {savedActiveVouchers.map((voucher: any) => {
+              {availableVouchers.map((voucher: any) => {
                 const isSelected = appliedVoucher?.code === voucher.code;
+                const isVoucherSaved = savedVouchers.some(savedCode => savedCode.toUpperCase().trim() === voucher.code.toUpperCase().trim());
                 return (
                   <TouchableOpacity 
                     key={voucher.id} 
@@ -488,7 +487,7 @@ export default function PaymentScreen() {
                   >
                     <View style={{ flex: 1, marginRight: Spacing.sm }}>
                       <Text style={{ ...Typography.body2, fontWeight: '700', color: Colors.light.text }}>
-                        {voucher.code} - {voucher.name}
+                        {voucher.code} - {voucher.name} {isVoucherSaved && <Text style={{ color: Colors.primary, fontSize: 10 }}>[Đã lưu]</Text>}
                       </Text>
                       <Text style={{ ...Typography.caption, color: Colors.light.textSecondary, marginTop: 2 }}>
                         Giảm {voucher.discountType === 'percent' ? `${voucher.discountValue}%` : `${voucher.discountValue.toLocaleString('vi-VN')}đ`}
@@ -506,10 +505,7 @@ export default function PaymentScreen() {
             <View style={{ paddingVertical: 14, alignItems: 'center', marginBottom: Spacing.sm }}>
               <Ionicons name="pricetag-outline" size={32} color={Colors.light.textSecondary} style={{ marginBottom: 6 }} />
               <Text style={{ ...Typography.body2, color: Colors.light.textSecondary, textAlign: 'center', fontWeight: '500' }}>
-                Không tìm thấy voucher đã lưu phù hợp cho chỗ nghỉ này.
-              </Text>
-              <Text style={{ ...Typography.caption, color: Colors.light.textSecondary, marginTop: 4, textAlign: 'center', paddingHorizontal: Spacing.lg }}>
-                Hãy lưu mã giảm giá tại trang "Ưu đãi của bạn" trước khi thanh toán.
+                Không tìm thấy voucher phù hợp cho chỗ nghỉ này.
               </Text>
             </View>
           )}

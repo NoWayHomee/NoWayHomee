@@ -25,17 +25,72 @@ import { PartnerService } from './partner.service';
 import { discount_type_enum } from '@prisma/client';
 
 import { BadRequestException } from '@nestjs/common';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 class CreateVoucherDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(4)
+  @MaxLength(50)
+  @Matches(/^[A-Z0-9_-]+$/, {
+    message: 'Mã voucher chỉ được chứa chữ hoa, số, dấu gạch ngang và gạch dưới',
+  })
   code!: string;
+
+  @IsEnum(discount_type_enum)
+  @IsNotEmpty()
   discountType!: discount_type_enum;
+
+  @IsNumber()
+  @IsPositive()
+  @IsNotEmpty()
+  @Type(() => Number)
   discountValue!: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
   minOrderAmount!: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
   maxDiscount?: number;
+
+  @IsString()
+  @IsNotEmpty()
   startDate!: string;
+
+  @IsString()
+  @IsNotEmpty()
   endDate!: string;
+
+  @IsInt()
+  @IsOptional()
+  @IsPositive()
+  @Type(() => Number)
   maxUses?: number;
+
+  @IsInt()
+  @IsOptional()
+  @IsPositive()
+  @Type(() => Number)
   maxUsesPerUser?: number;
+
+  @IsString()
+  @IsOptional()
   name?: string;
 }
 

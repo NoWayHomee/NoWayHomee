@@ -5,7 +5,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
+import { IsNotEmpty, IsString } from 'class-validator';
+
 class CreateFavoriteDto {
+  @IsString()
+  @IsNotEmpty()
   propertyId!: string;
 }
 
