@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { property_status_enum } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -359,13 +359,54 @@ export class AdminService {
 
   async cancelBooking(adminUser: AuthenticatedUser, bookingIdStr: string) {
     const id = this.parseBigIntParam(bookingIdStr, 'bookingId');
-    return this.prisma.booking.update({
+
+    const booking = await this.prisma.booking.findUnique({
       where: { id },
-      data: {
-        status: 'cancelled',
-        cancelledById: BigInt(adminUser.id),
-        cancelledAt: new Date(),
-      },
+      select: { checkInDate: true, checkOutDate: true, cancellationReason: true, status: true }
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Không tìm thấy đơn đặt phòng');
+    }
+
+    if (booking.status === 'cancelled' || booking.status === 'checked_out') {
+      throw new BadRequestException('Đơn đặt phòng đã bị hủy hoặc đã trả phòng');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.booking.update({
+        where: { id },
+        data: {
+          status: 'cancelled',
+          cancelledById: BigInt(adminUser.id),
+          cancelledAt: new Date(),
+          cancellationReason: booking.cancellationReason?.startsWith('PENDING_CANCEL')
+            ? `Yêu cầu hủy được duyệt: ${booking.cancellationReason.replace('PENDING_CANCEL:', '').trim()}`
+            : 'Admin hủy đơn hàng',
+        },
+      });
+
+      // Restore availability
+      const inventoryRows = await tx.$queryRaw<Array<{ ratePlanId: bigint; roomsCount: bigint }>>`
+        SELECT
+          rate_plan_id AS "ratePlanId",
+          COUNT(*) AS "roomsCount"
+        FROM booking_rooms
+        WHERE booking_id = ${id}
+        GROUP BY rate_plan_id
+      `;
+
+      for (const row of inventoryRows) {
+        await tx.$executeRaw`
+          UPDATE daily_rates
+          SET available_qty = available_qty + ${Number(row.roomsCount)}
+          WHERE rate_plan_id = ${row.ratePlanId}
+            AND date >= ${booking.checkInDate}
+            AND date < ${booking.checkOutDate}
+        `;
+      }
+
+      return updatedBooking;
     });
   }
 
@@ -375,6 +416,7 @@ export class AdminService {
       where: { id },
       data: {
         status: 'confirmed',
+        cancellationReason: null, // Clear the PENDING_CANCEL flag
       },
     });
   }
