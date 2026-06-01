@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchPartners, approvePartner, deletePartner, rejectPartner } from "../../../../api/partnersApi";
+import { fetchPartners, approvePartner, deletePartner, rejectPartner, revokePartner } from "../../../../api/partnersApi";
 import { Partner } from "@/shared/types";
 import { PartnerEditModal } from "../modals/PartnerEditModal";
 import { PartnerHotelRoomsModal } from "../modals/PartnerHotelRoomsModal";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, Button, Badge, cn } from "../../../../shared/components/ui";
-import { Search, ChevronUp, ChevronDown, Trash2, Edit, ExternalLink, Check, XCircle } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, Trash2, Edit, ExternalLink, Check, XCircle, UserMinus } from "lucide-react";
 import { useConfirmDialog } from "../../../../shared/components/ConfirmDialog";
 
 function removePartnerFromCache(oldData: any, deletedId: number) {
@@ -80,6 +80,11 @@ export function PartnersTab({ initialFilter = "pending" }: { initialFilter?: str
       queryClient.setQueriesData({ queryKey: ["partners"] }, (oldData: any) => removePartnerFromCache(oldData, deletedId));
       queryClient.invalidateQueries({ queryKey: ["partners"] });
     },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: number) => revokePartner(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["partners"] }),
   });
 
   const filteredList = useMemo(() => {
@@ -182,18 +187,27 @@ export function PartnersTab({ initialFilter = "pending" }: { initialFilter?: str
                     mounted={mounted}
                     onApprove={() => approveMutation.mutate(partner.id)}
                     onReject={() => setReject({ id: partner.id, reason: "" })}
+                    onRevoke={async () => {
+                      const ok = await confirm({
+                        title: "Hủy quyền đối tác",
+                        message: `Tài khoản "${partner.fullName}" sẽ bị thu hồi quyền đối tác và hạ về customer. Tài khoản vẫn còn tồn tại.`,
+                        confirmText: "Hủy quyền",
+                        tone: "danger",
+                      });
+                      if (ok) revokeMutation.mutate(partner.id);
+                    }}
                     onEdit={() => setEditingPartner(partner)}
                     onDelete={async () => {
                       const ok = await confirm({
-                        title: "Xóa đối tác",
-                        message: `Đối tác "${partner.fullName}" sẽ bị xóa khỏi danh sách quản trị.`,
-                        confirmText: "Xóa",
+                        title: "Xóa tài khoản vĩnh viễn",
+                        message: `Tài khoản "${partner.fullName}" sẽ bị XÓA HOÀN TOÀN khỏi hệ thống và không thể khôi phục.`,
+                        confirmText: "Xóa vĩnh viễn",
                         tone: "danger",
                       });
                       if (ok) deleteMutation.mutate(partner.id);
                     }}
                     onViewRooms={() => setSelectedPartner(partner)}
-                    isProcessing={approveMutation.isPending}
+                    isProcessing={approveMutation.isPending || revokeMutation.isPending}
                   />
                 ))
               )}
@@ -262,7 +276,7 @@ function PartnerFilter({ filter, setFilter }: any) {
   );
 }
 
-function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onEdit, onDelete, onViewRooms, isProcessing }: any) {
+function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onRevoke, onEdit, onDelete, onViewRooms, isProcessing }: any) {
   return (
     <tr className={cn("transition-all duration-500", isTarget ? "animate-highlight-pulse bg-primary/10" : "hover:bg-accent/30")}>
       <td className="px-4 py-3 font-semibold text-zinc-800">{partner.email}</td>
@@ -288,22 +302,32 @@ function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onEdit, o
       </td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-1">
+          {/* Pending: Duyệt hoặc Từ chối đơn KYC */}
           {partner.status === "pending" && (
             <>
-              <Button variant="ghost" size="icon" className="size-8 text-emerald-600 hover:bg-emerald-50" onClick={onApprove} disabled={isProcessing}>
+              <Button variant="ghost" size="icon" className="size-8 text-emerald-600 hover:bg-emerald-50" title="Duyệt đơn" onClick={onApprove} disabled={isProcessing}>
                 <Check className="size-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onReject}>
+              <Button variant="ghost" size="icon" className="size-8 text-orange-500 hover:bg-orange-50" title="Từ chối đơn KYC" onClick={onReject} disabled={isProcessing}>
                 <XCircle className="size-4" />
               </Button>
             </>
           )}
-          <Button variant="ghost" size="icon" className="size-8 text-zinc-600" onClick={onEdit}>
+          {/* Approved: Hủy quyền đối tác (hạ về customer, không xóa TK) */}
+          {partner.status === "approved" && (
+            <Button variant="ghost" size="icon" className="size-8 text-amber-600 hover:bg-amber-50" title="Hủy quyền đối tác" onClick={onRevoke} disabled={isProcessing}>
+              <UserMinus className="size-4" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="size-8 text-zinc-600" title="Chỉnh sửa" onClick={onEdit}>
             <Edit className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onDelete}>
-            <Trash2 className="size-4" />
-          </Button>
+          {/* Xóa hẳn tài khoản – chỉ hiện khi rejected hoặc pending */}
+          {partner.status !== "approved" && (
+            <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" title="Xóa tài khoản vĩnh viễn" onClick={onDelete}>
+              <Trash2 className="size-4" />
+            </Button>
+          )}
         </div>
       </td>
     </tr>
