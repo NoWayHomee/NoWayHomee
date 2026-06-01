@@ -320,6 +320,18 @@ export class CompatController {
   }
 
   @Roles(Role.ADMIN)
+  @Post('admin/partners/:id/lock')
+  lockPartner(@Param('id') id: string) {
+    return this.compatService.lockPartner(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Post('admin/partners/:id/unlock')
+  unlockPartner(@Param('id') id: string) {
+    return this.compatService.unlockPartner(id);
+  }
+
+  @Roles(Role.ADMIN)
   @Delete('admin/partners/:id')
   deletePartner(@Param('id') id: string) {
     return this.compatService.deleteUser(id);

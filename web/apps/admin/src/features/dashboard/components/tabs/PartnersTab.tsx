@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchPartners, approvePartner, deletePartner, rejectPartner } from "../../../../api/partnersApi";
+import { fetchPartners, approvePartner, deletePartner, rejectPartner, lockPartner, unlockPartner } from "../../../../api/partnersApi";
 import { Partner } from "@/shared/types";
 import { PartnerEditModal } from "../modals/PartnerEditModal";
 import { PartnerHotelRoomsModal } from "../modals/PartnerHotelRoomsModal";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, Button, Badge, cn } from "../../../../shared/components/ui";
-import { Search, ChevronUp, ChevronDown, Trash2, Edit, ExternalLink, Check, XCircle } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, Trash2, Edit, ExternalLink, Check, XCircle, Lock, Unlock } from "lucide-react";
 import { useConfirmDialog } from "../../../../shared/components/ConfirmDialog";
 
 function removePartnerFromCache(oldData: any, deletedId: number) {
@@ -71,6 +71,16 @@ export function PartnersTab({ initialFilter = "pending" }: { initialFilter?: str
 
   const approveMutation = useMutation({
     mutationFn: (id: number) => approvePartner(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["partners"] }),
+  });
+
+  const lockMutation = useMutation({
+    mutationFn: (id: number) => lockPartner(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["partners"] }),
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (id: number) => unlockPartner(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["partners"] }),
   });
 
@@ -183,6 +193,24 @@ export function PartnersTab({ initialFilter = "pending" }: { initialFilter?: str
                     onApprove={() => approveMutation.mutate(partner.id)}
                     onReject={() => setReject({ id: partner.id, reason: "" })}
                     onEdit={() => setEditingPartner(partner)}
+                    onLock={async () => {
+                      const ok = await confirm({
+                        title: "Khóa tài khoản đối tác",
+                        message: `Đối tác "${partner.fullName}" sẽ bị khóa và không thể đăng nhập vào hệ thống.`,
+                        confirmText: "Khóa",
+                        tone: "danger",
+                      });
+                      if (ok) lockMutation.mutate(partner.id);
+                    }}
+                    onUnlock={async () => {
+                      const ok = await confirm({
+                        title: "Mở khóa tài khoản đối tác",
+                        message: `Đối tác "${partner.fullName}" sẽ được mở khóa và có thể đăng nhập trở lại.`,
+                        confirmText: "Mở khóa",
+                        tone: "default",
+                      });
+                      if (ok) unlockMutation.mutate(partner.id);
+                    }}
                     onDelete={async () => {
                       const ok = await confirm({
                         title: "Xóa đối tác",
@@ -193,7 +221,7 @@ export function PartnersTab({ initialFilter = "pending" }: { initialFilter?: str
                       if (ok) deleteMutation.mutate(partner.id);
                     }}
                     onViewRooms={() => setSelectedPartner(partner)}
-                    isProcessing={approveMutation.isPending}
+                    isProcessing={approveMutation.isPending || lockMutation.isPending || unlockMutation.isPending}
                   />
                 ))
               )}
@@ -244,8 +272,13 @@ function SortableHeader({ label, columnKey, sortConfig, onSort }: any) {
 
 function PartnerFilter({ filter, setFilter }: any) {
   return (
-    <div className="flex bg-muted p-1 rounded-lg">
-      {[["pending", "Chờ duyệt"], ["approved", "Đã duyệt"], ["rejected", "Từ chối"]].map(([key, label]) => (
+    <div className="flex flex-wrap bg-muted p-1 rounded-lg gap-1">
+      {[
+        ["pending", "Chờ duyệt"],
+        ["approved", "Đã duyệt"],
+        ["rejected", "Từ chối"],
+        ["suspended", "Đã khóa"],
+      ].map(([key, label]) => (
         <button
           key={key}
           type="button"
@@ -253,6 +286,7 @@ function PartnerFilter({ filter, setFilter }: any) {
           className={cn(
             "px-4 py-1.5 rounded-md text-sm font-semibold transition-all",
             filter === key ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground",
+            key === "suspended" && filter === key && "text-rose-600",
           )}
         >
           {label}
@@ -262,10 +296,24 @@ function PartnerFilter({ filter, setFilter }: any) {
   );
 }
 
-function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onEdit, onDelete, onViewRooms, isProcessing }: any) {
+function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onEdit, onDelete, onLock, onUnlock, onViewRooms, isProcessing }: any) {
+  const isLocked = partner.userStatus === "suspended";
   return (
-    <tr className={cn("transition-all duration-500", isTarget ? "animate-highlight-pulse bg-primary/10" : "hover:bg-accent/30")}>
-      <td className="px-4 py-3 font-semibold text-zinc-800">{partner.email}</td>
+    <tr className={cn(
+      "transition-all duration-500",
+      isTarget ? "animate-highlight-pulse bg-primary/10" : "hover:bg-accent/30",
+      isLocked && "opacity-60",
+    )}>
+      <td className="px-4 py-3 font-semibold text-zinc-800">
+        <div className="flex flex-col gap-0.5">
+          <span>{partner.email}</span>
+          {isLocked && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-500">
+              <Lock size={9} /> Đã khóa
+            </span>
+          )}
+        </div>
+      </td>
       <td className="px-4 py-3 text-zinc-700 font-medium">{partner.fullName}</td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -278,30 +326,56 @@ function PartnerRow({ partner, isTarget, mounted, onApprove, onReject, onEdit, o
       <td className="px-4 py-3 text-muted-foreground font-medium">{partner.phone || "-"}</td>
       <td className="px-4 py-3 text-muted-foreground font-medium">{mounted ? new Date(partner.createdAt).toLocaleDateString("vi-VN") : "-"}</td>
       <td className="px-4 py-3">
-        {partner.status === "pending" ? (
-          <Badge variant="secondary">Đang chờ</Badge>
-        ) : partner.status === "approved" ? (
-          <Badge variant="success">Đã duyệt</Badge>
-        ) : (
-          <Badge variant="destructive" title={partner.rejectReason || ""}>Từ chối</Badge>
-        )}
+        <div className="flex flex-col gap-1">
+          {partner.status === "pending" ? (
+            <Badge variant="secondary">Chờ duyệt</Badge>
+          ) : partner.status === "approved" ? (
+            <Badge variant="success">Đã duyệt</Badge>
+          ) : (
+            <Badge variant="destructive" title={partner.rejectReason || ""}>Từ chối</Badge>
+          )}
+          {isLocked && <Badge variant="destructive" className="text-[10px] py-0">Bị khóa</Badge>}
+        </div>
       </td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-1">
-          {partner.status === "pending" && (
+          {partner.status === "pending" && !isLocked && (
             <>
-              <Button variant="ghost" size="icon" className="size-8 text-emerald-600 hover:bg-emerald-50" onClick={onApprove} disabled={isProcessing}>
+              <Button variant="ghost" size="icon" className="size-8 text-emerald-600 hover:bg-emerald-50" onClick={onApprove} disabled={isProcessing} title="Phê duyệt">
                 <Check className="size-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onReject}>
+              <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onReject} title="Từ chối">
                 <XCircle className="size-4" />
               </Button>
             </>
           )}
-          <Button variant="ghost" size="icon" className="size-8 text-zinc-600" onClick={onEdit}>
+          {isLocked ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-emerald-600 hover:bg-emerald-50"
+              onClick={onUnlock}
+              disabled={isProcessing}
+              title="Mở khóa tài khoản"
+            >
+              <Unlock className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-amber-600 hover:bg-amber-50"
+              onClick={onLock}
+              disabled={isProcessing}
+              title="Khóa tài khoản"
+            >
+              <Lock className="size-4" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="size-8 text-zinc-600" onClick={onEdit} title="Chỉnh sửa">
             <Edit className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onDelete}>
+          <Button variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10" onClick={onDelete} title="Xóa">
             <Trash2 className="size-4" />
           </Button>
         </div>

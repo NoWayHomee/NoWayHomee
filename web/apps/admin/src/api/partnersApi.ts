@@ -5,7 +5,8 @@ export interface Partner {
   email: string;
   fullName: string;
   phone?: string;
-  status: string;
+  status: string;       // kycStatus: pending | approved | rejected
+  userStatus: string;   // account status: active | suspended
   createdAt: string;
   // other fields as needed
 }
@@ -36,6 +37,16 @@ export const rejectPartner = async (id: number, reason: string) => {
     method: "POST",
     body: JSON.stringify({ reason })
   });
+};
+
+/** Lock (suspend) a partner account - blocks login */
+export const lockPartner = async (id: number) => {
+  return await api(`/admin/partners/${id}/lock`, { method: "POST" });
+};
+
+/** Unlock (re-activate) a suspended partner account */
+export const unlockPartner = async (id: number) => {
+  return await api(`/admin/partners/${id}/unlock`, { method: "POST" });
 };
 
 export const fetchPartnerRooms = async (partnerId: number) => {
