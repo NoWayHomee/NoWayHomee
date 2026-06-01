@@ -36,6 +36,10 @@ QAs cần chụp lại các màn hình/khoảnh khắc chính sau đây để ch
    - *Tên file gợi ý:* `evidence_TC_ADM_PTN_03_PartnerDetails.png`
 3. **Phê duyệt thành công**: Chụp màn hình sau khi bấm nút "Duyệt" (Approve) và xác nhận, xuất hiện thông báo thành công (toast/alert) và đối tác đó chuyển sang trạng thái "Đã duyệt" với nhãn xanh lá.
    - *Tên file gợi ý:* `evidence_TC_ADM_PTN_04_ApproveSuccess.png`
+4. **Khóa tài khoản đối tác**: Chụp popup xác nhận khi bấm nút "Khóa tài khoản" và màn hình hiển thị đối tác có trạng thái "Bị khóa" / "Đã khóa" sau khi khóa thành công.
+   - *Tên file gợi ý:* `evidence_TC_ADM_PTN_06_LockPartner.png`
+5. **Mở khóa tài khoản đối tác**: Chụp popup xác nhận khi bấm nút "Mở khóa tài khoản" và màn hình hiển thị trạng thái đối tác phục hồi về "Đã duyệt" (Active) sau khi mở khóa thành công.
+   - *Tên file gợi ý:* `evidence_TC_ADM_PTN_07_UnlockPartner.png`
 
 ### 2.3. Luồng Phê duyệt Khách sạn & Phòng nghỉ (Rooms)
 1. **Yêu cầu Chờ duyệt**: Chụp danh sách Khách sạn ở bộ lọc "Chờ duyệt", khoanh đỏ khách sạn mới gửi từ đối tác.
