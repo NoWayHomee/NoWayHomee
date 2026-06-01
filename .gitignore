@@ -79,7 +79,10 @@ web/**/dist/
 # =============================================================================
 # Mobile (Expo / React Native)
 # =============================================================================
-mobile-app/.expo/
+mobile-app/.expo/*
+!mobile-app/.expo/types/
+!mobile-app/.expo/types/router.d.ts
+
 mobile-app/expo-env.d.ts
 mobile-app/web-build/
 mobile-app/.metro-health-check*
@@ -101,7 +104,8 @@ mobile-app/.kotlin/
 # =============================================================================
 # Database snapshots (auto-generated, not source-controlled)
 # =============================================================================
-database/snapshots/*.sql
+!database/snapshots/data.sql
+!database/snapshots/schema.sql
 
 # =============================================================================
 # Python (database tooling)
