@@ -83,7 +83,7 @@ export default function PaymentScreen() {
   const { data: property, isPending: isPropertyPending } = useQuery({
     queryKey: ['property_details', propertyId],
     queryFn: async () => {
-      return await apiClient.get(`/properties/id/${propertyId}`);
+      return (await apiClient.get(`/properties/${propertyId}`)) as any;
     },
     enabled: !!propertyId,
   });
