@@ -9,6 +9,8 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import {
   business_type_enum,
   device_type_enum,
+  identifier_type_enum,
+  otp_purpose_enum,
   social_provider_enum,
   User,
   UserSession,
@@ -17,7 +19,7 @@ import {
   kyc_status_enum,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -62,6 +64,15 @@ export interface LogoutResponse {
   statusCode: 200;
   message: 'Logged out successfully';
   data: null;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
+  otp?: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
 }
 
 @Injectable()
@@ -315,6 +326,125 @@ export class AuthService {
       message: 'Logged out successfully',
       data: null,
     };
+  }
+
+  async forgotPassword(
+    email: string,
+    context: { ipAddress?: string } = {},
+  ): Promise<ForgotPasswordResponse> {
+    const identifier = email.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: identifier,
+        deletedAt: null,
+        status: user_status_enum.active,
+      },
+    });
+
+    const genericMessage =
+      'Nếu email tồn tại trong hệ thống, mã OTP khôi phục mật khẩu đã được tạo.';
+
+    if (!user) {
+      return { message: genericMessage };
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const tokenHash = await bcrypt.hash(otp, this.saltRounds);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.otpToken.updateMany({
+        where: {
+          identifier,
+          purpose: otp_purpose_enum.reset_password,
+          usedAt: null,
+        },
+        data: {
+          usedAt: new Date(),
+        },
+      });
+
+      await tx.otpToken.create({
+        data: {
+          userId: user.id,
+          identifier,
+          identifierType: identifier_type_enum.email,
+          purpose: otp_purpose_enum.reset_password,
+          tokenHash,
+          expiresAt,
+          ipAddress: context.ipAddress,
+        },
+      });
+    });
+
+    if (this.configService.get<string>('NODE_ENV') === 'production') {
+      return { message: genericMessage };
+    }
+
+    return {
+      message: genericMessage,
+      otp,
+    };
+  }
+
+  async resetPassword(
+    email: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<ResetPasswordResponse> {
+    const identifier = email.trim().toLowerCase();
+    const token = await this.prisma.otpToken.findFirst({
+      where: {
+        identifier,
+        purpose: otp_purpose_enum.reset_password,
+        usedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (!token) {
+      throw new UnauthorizedException('OTP không hợp lệ hoặc đã hết hạn');
+    }
+
+    const isOtpValid = await bcrypt.compare(otp, token.tokenHash);
+    if (!isOtpValid) {
+      await this.prisma.otpToken.update({
+        where: { id: token.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new UnauthorizedException('OTP không hợp lệ hoặc đã hết hạn');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, this.saltRounds);
+    if (!token.userId) {
+      throw new UnauthorizedException('OTP không hợp lệ hoặc đã hết hạn');
+    }
+    const userId = token.userId;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      });
+      await tx.otpToken.update({
+        where: { id: token.id },
+        data: { usedAt: new Date() },
+      });
+      await tx.userSession.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+    });
+
+    return { message: 'Đặt lại mật khẩu thành công' };
   }
 
   private parseTokenBigInt(value: string): bigint {
