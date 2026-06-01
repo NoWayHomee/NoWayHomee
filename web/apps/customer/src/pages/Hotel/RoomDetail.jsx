@@ -121,6 +121,7 @@ const RoomDetail = () => {
 
           const mapped = {
             id: raw.slug,
+            propertyId: raw.id?.toString(),
             name: raw.name,
             slug: raw.slug,
             type: raw.propertyType === 'hotel' || raw.property_type === 'hotel'
@@ -165,6 +166,7 @@ const RoomDetail = () => {
             roomTypes: raw.roomTypes?.length > 0
               ? raw.roomTypes.map(rt => ({
                 id: rt.id?.toString() || String(Math.random()),
+                ratePlanId: rt.ratePlans?.[0]?.id?.toString(),
                 name: rt.name,
                 description: rt.description || '',
                 price: Number(rt.total_price || rt.basePrice || 0),
