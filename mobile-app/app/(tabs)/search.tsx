@@ -124,7 +124,7 @@ export default function SearchResultsScreen() {
           sort_by: sortMode || undefined,
         },
       });
-      let items = response.data.items as any[];
+      let items = (response as any).items as any[];
       return items;
     },
   });
