@@ -73,7 +73,13 @@ export default function SearchModalScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)');
+          }
+        }} style={styles.closeBtn}>
           <Ionicons name="close" size={24} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Tìm kiếm</Text>
@@ -202,11 +208,15 @@ export default function SearchModalScreen() {
             return;
           }
 
-          router.back();
-          // Wait for modal to close before pushing
-          setTimeout(() => {
-            router.push('/(tabs)/search' as any);
-          }, 300);
+          if (router.canGoBack()) {
+            router.back();
+            // Wait for modal to close before pushing
+            setTimeout(() => {
+              router.push('/(tabs)/search' as any);
+            }, 300);
+          } else {
+            router.replace('/(tabs)/search' as any);
+          }
         }}>
           <Ionicons name="search" size={20} color="white" />
           <Text style={styles.searchBtnText}>Tìm kiếm</Text>

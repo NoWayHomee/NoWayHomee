@@ -175,7 +175,7 @@ export default function PaymentScreen() {
       }
     }
     
-    const finalTotal = basePrice + totalFees + additionalServices - discount;
+    const finalTotal = Math.max(0, basePrice + totalFees + additionalServices - discount);
 
     return { basePrice, serviceFee, tax, totalFees, additionalServices, discount, finalTotal };
   }, [selectedRequests, numberOfNights, numberOfRooms, basePricePerNight, appliedVoucher]);
@@ -287,7 +287,13 @@ export default function PaymentScreen() {
     <SafeAreaView style={styles.container}>
       {/* ===== HEADER ===== */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)');
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Xác nhận và Thanh toán</Text>

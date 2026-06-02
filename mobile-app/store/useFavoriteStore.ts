@@ -14,7 +14,18 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
   fetchFavorites: async () => {
     try {
       const response: any = await apiClient.get('/favorites');
-      const items = (response || []).map((item: any) => item.property);
+      const items = (response || []).map((item: any) => {
+        const p = item.property;
+        return {
+          id: p.id,
+          title: p.name,
+          location: p.district ? `${p.district}, ${p.city}` : p.city,
+          price: Number(p.minPrice) || 0,
+          rating: Number(p.avgRating) || 0,
+          reviews: Number(p.totalReviews) || 0,
+          imageUrl: p.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945',
+        };
+      });
       set({ favorites: items });
     } catch (error) {
       console.warn('Error fetching favorites:', error);

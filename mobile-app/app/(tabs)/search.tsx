@@ -124,7 +124,7 @@ export default function SearchResultsScreen() {
           sort_by: sortMode || undefined,
         },
       });
-      let items = response.items as any[];
+      let items = response.data.items as any[];
       return items;
     },
   });
@@ -275,7 +275,13 @@ export default function SearchResultsScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)');
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.logo}>NoWayHome</Text>

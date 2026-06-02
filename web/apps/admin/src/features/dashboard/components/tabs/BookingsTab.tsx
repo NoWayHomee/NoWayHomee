@@ -509,7 +509,7 @@ export function BookingsTab() {
       {viewMode === "hotels" ? (
         <div className="bg-card border rounded-lg overflow-hidden max-h-[70vh] overflow-y-auto">
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-muted/50 text-left sticky top-0 z-10">
+            <thead className="bg-muted text-left sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 font-bold">Khách sạn</th>
                 <th className="px-4 py-3 font-bold">Đối tác</th>
@@ -582,7 +582,7 @@ export function BookingsTab() {
       ) : (
         <div className="bg-card border rounded-lg overflow-hidden max-h-[70vh] overflow-y-auto">
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-muted/50 text-left sticky top-0 z-10">
+            <thead className="bg-muted text-left sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 font-bold">Mã đặt</th>
                 <th className="px-4 py-3 font-bold">Khách hàng</th>
