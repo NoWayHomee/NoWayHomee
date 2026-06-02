@@ -90,7 +90,16 @@ export default function RegisterScreen() {
             
             {/* Top Bar */}
             <View style={styles.topBar}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <TouchableOpacity 
+                style={styles.backButton} 
+                onPress={() => {
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/(tabs)');
+                  }
+                }}
+              >
                 <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
               </TouchableOpacity>
               <Text style={styles.topTitle}>NoWayHome</Text>

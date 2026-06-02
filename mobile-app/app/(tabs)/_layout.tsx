@@ -82,7 +82,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="booking"
+        name="wishlist"
         options={{
           href: null,
         }}

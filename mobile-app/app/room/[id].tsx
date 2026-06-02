@@ -95,7 +95,16 @@ export default function RoomDetailScreen() {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={{ color: 'red' }}>Đã xảy ra lỗi khi tải thông tin phòng.</Text>
-        <TouchableOpacity style={styles.bookButtonError} onPress={() => router.back()}>
+        <TouchableOpacity 
+          style={styles.bookButtonError} 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }}
+        >
           <Text style={styles.bookButtonText}>Quay lại</Text>
         </TouchableOpacity>
       </View>
@@ -196,7 +205,16 @@ export default function RoomDetailScreen() {
             )}
           </ScrollView>
           <SafeAreaView edges={['top']} style={styles.headerButtons}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+            <TouchableOpacity 
+              style={styles.iconButton} 
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace('/(tabs)');
+                }
+              }}
+            >
               <Ionicons name="arrow-back" size={22} color={Colors.light.text} />
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: Spacing.sm }}>

@@ -131,7 +131,16 @@ export default function LoginScreen() {
           <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             
             {/* Back Button */}
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace('/(tabs)');
+                }
+              }}
+            >
               <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
             </TouchableOpacity>
 

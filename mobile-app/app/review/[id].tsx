@@ -73,7 +73,13 @@ export default function ReviewScreen() {
     },
     onSuccess: () => {
       Alert.alert('Thành công', 'Đánh giá đã được gửi thành công!', [
-        { text: 'Đóng', onPress: () => router.back() }
+        { text: 'Đóng', onPress: () => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)/trips');
+          }
+        }}
       ]);
     },
     onError: (error: any) => {
@@ -84,7 +90,13 @@ export default function ReviewScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)/trips');
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Đánh giá chuyến đi</Text>

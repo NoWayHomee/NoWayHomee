@@ -22,7 +22,18 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
     }
     try {
       const response: any = await apiClient.get('/favorites');
-      const items = (response || []).map((item: any) => item.property);
+      const items = (response || []).map((item: any) => {
+        const p = item.property;
+        return {
+          id: p.id,
+          title: p.name,
+          location: p.district ? `${p.district}, ${p.city}` : p.city,
+          price: Number(p.minPrice) || 0,
+          rating: Number(p.avgRating) || 0,
+          reviews: Number(p.totalReviews) || 0,
+          imageUrl: p.coverImage || 'https://images.unsplash.com/photo-1566073771259-6a8506099945',
+        };
+      });
       set({ favorites: items });
     } catch (error: any) {
       // Session expired or unauthorized — clear silently, interceptor handles logout
@@ -41,7 +52,7 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
       try {
         await apiClient.delete(`/favorites/${property.id}`);
       } catch (error) {
-        console.error('Error removing favorite:', error);
+        console.warn('Error removing favorite:', error);
         set({ favorites: [...get().favorites, property] });
       }
     } else {
@@ -49,7 +60,7 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
       try {
         await apiClient.post('/favorites', { propertyId: property.id });
       } catch (error) {
-        console.error('Error adding favorite:', error);
+        console.warn('Error adding favorite:', error);
         set({ favorites: get().favorites.filter((p) => p.id !== property.id) });
       }
     }

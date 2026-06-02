@@ -128,7 +128,11 @@ export default function EditProfileScreen() {
         });
       }
       Alert.alert('Thành công', 'Thông tin hồ sơ đã được cập nhật!');
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/profile');
+      }
     },
     onError: (error: any) => {
       Alert.alert('Lỗi', error.message || 'Không thể cập nhật hồ sơ.');
@@ -176,7 +180,13 @@ export default function EditProfileScreen() {
     <SafeAreaView style={styles.container}>
       {/* ===== HEADER ===== */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)/profile');
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Chỉnh sửa hồ sơ</Text>

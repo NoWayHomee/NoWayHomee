@@ -14,6 +14,11 @@ export class FavoritesService {
             media: {
               take: 1,
             },
+            roomTypes: {
+              select: {
+                basePrice: true,
+              },
+            },
           },
         },
       },
@@ -21,6 +26,10 @@ export class FavoritesService {
 
     return favorites.map((fav) => {
       const property = fav.property;
+      const minPrice = property.roomTypes.length > 0
+        ? Math.min(...property.roomTypes.map((rt) => Number(rt.basePrice)))
+        : 0;
+
       return {
         id: fav.id.toString(),
         userId: fav.userId.toString(),
@@ -40,6 +49,7 @@ export class FavoritesService {
           avgRating: property.avgRating ? Number(property.avgRating) : 0,
           totalReviews: property.totalReviews,
           coverImage: property.media[0]?.url || null,
+          minPrice,
         },
       };
     });
