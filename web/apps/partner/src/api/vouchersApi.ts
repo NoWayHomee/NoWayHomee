@@ -2,7 +2,7 @@ import { api } from "@nowayhome/api-client";
 
 export interface CreateVoucherPayload {
   code: string;
-  discountType: "fixed_value" | "percentage";
+  discountType: "fixed" | "percent";
   discountValue: number;
   minOrderAmount: number;
   maxDiscount?: number;
@@ -17,7 +17,7 @@ export interface VoucherItem {
   id: number;
   code: string;
   name: string;
-  discountType: "fixed_value" | "percentage";
+  discountType: "fixed" | "percent";
   discountValue: number;
   minOrderAmount: number;
   maxDiscount: number | null;

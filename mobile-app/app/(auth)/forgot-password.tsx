@@ -43,7 +43,11 @@ export default function ForgotPasswordScreen() {
     try {
       await authService.forgotPassword(data.email);
       Alert.alert('Thành công', 'Mã khôi phục đã được gửi đến email của bạn.');
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (error: any) {
       Alert.alert('Lỗi', error.message || 'Không thể gửi yêu cầu khôi phục.');
     } finally {
@@ -59,7 +63,16 @@ export default function ForgotPasswordScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            }}
+          >
             <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
           </TouchableOpacity>
 

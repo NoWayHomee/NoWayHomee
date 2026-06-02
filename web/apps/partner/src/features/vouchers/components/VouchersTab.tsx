@@ -24,7 +24,7 @@ export function VouchersTab() {
   // Form State
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [discountType, setDiscountType] = useState<"fixed_value" | "percentage">("fixed_value");
+  const [discountType, setDiscountType] = useState<"fixed" | "percent">("fixed");
   const [discountValue, setDiscountValue] = useState("");
   const [minOrderAmount, setMinOrderAmount] = useState("");
   const [maxDiscount, setMaxDiscount] = useState("");
@@ -198,8 +198,8 @@ export function VouchersTab() {
                 onChange={(e) => setDiscountType(e.target.value as any)}
                 className="mt-1 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
               >
-                <option value="fixed_value">Số tiền cố định (đ)</option>
-                <option value="percentage">Phần trăm (%)</option>
+                <option value="fixed">Số tiền cố định (đ)</option>
+                <option value="percent">Phần trăm (%)</option>
               </select>
             </div>
 
@@ -212,7 +212,7 @@ export function VouchersTab() {
                 id="discountValue"
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder={discountType === "percentage" ? "VD: 10" : "VD: 100000"}
+                placeholder={discountType === "percent" ? "VD: 10" : "VD: 100000"}
                 className="mt-1 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
                 required
               />
@@ -243,7 +243,7 @@ export function VouchersTab() {
                 onChange={(e) => setMaxDiscount(e.target.value)}
                 placeholder="Chỉ dùng cho giảm %"
                 className="mt-1 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
-                disabled={discountType === "fixed_value"}
+                disabled={discountType === "fixed"}
               />
             </div>
 
@@ -377,7 +377,7 @@ export function VouchersTab() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
                       <div className="flex items-center font-medium">
-                        {v.discountType === "percentage" ? (
+                        {v.discountType === "percent" ? (
                           <>
                             <Percent className="mr-1 h-3.5 w-3.5 text-emerald-500" />
                             {v.discountValue}%

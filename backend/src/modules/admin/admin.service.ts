@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { property_status_enum } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -145,6 +145,7 @@ export class AdminService {
         bookings: {
           include: {
             customer: true,
+            voucher: true,
           },
           orderBy: {
             createdAt: 'desc',
@@ -166,7 +167,11 @@ export class AdminService {
 
       const mappedBookings = bookingsList.map((booking) => {
         const total = Number(booking.totalAmount);
-        const platformFee = Number(booking.platformFeeAmount);
+        let platformFee = Number(booking.platformFeeAmount);
+        if (platformFee <= 0) {
+          const inferredFee = total - Number(booking.partnerPayoutAmount);
+          platformFee = inferredFee > 0 ? inferredFee : 0;
+        }
         const partnerPayout = Number(booking.partnerPayoutAmount);
 
         const isPaid = booking.paymentStatus === 'paid';
@@ -233,6 +238,8 @@ export class AdminService {
           isCompleted,
           isCurrentStay,
           isFutureStay,
+          voucherCode: booking.voucher?.code || null,
+          discountAmount: Number(booking.discountAmount) || 0,
         };
       });
 
@@ -273,6 +280,7 @@ export class AdminService {
             property: true,
           },
         },
+        voucher: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -335,7 +343,9 @@ export class AdminService {
         status: b.status,
         paymentStatus: b.paymentStatus,
         total: Number(b.totalAmount),
-        platformFee: Number(b.platformFeeAmount),
+        platformFee: Number(b.platformFeeAmount) > 0 
+          ? Number(b.platformFeeAmount) 
+          : (Number(b.totalAmount) - Number(b.partnerPayoutAmount) > 0 ? Number(b.totalAmount) - Number(b.partnerPayoutAmount) : 0),
         partnerPayout: Number(b.partnerPayoutAmount),
         createdAt: b.createdAt.toISOString(),
         specialRequests: b.specialRequests,
@@ -343,6 +353,8 @@ export class AdminService {
         isCompleted,
         isCurrentStay,
         isFutureStay,
+        voucherCode: b.voucher?.code || null,
+        discountAmount: Number(b.discountAmount) || 0,
       };
     });
   }
@@ -359,13 +371,68 @@ export class AdminService {
 
   async cancelBooking(adminUser: AuthenticatedUser, bookingIdStr: string) {
     const id = this.parseBigIntParam(bookingIdStr, 'bookingId');
-    return this.prisma.booking.update({
+
+    const booking = await this.prisma.booking.findUnique({
       where: { id },
-      data: {
-        status: 'cancelled',
-        cancelledById: BigInt(adminUser.id),
-        cancelledAt: new Date(),
-      },
+      select: { checkInDate: true, checkOutDate: true, cancellationReason: true, status: true }
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Không tìm thấy đơn đặt phòng');
+    }
+
+    if (booking.status === 'cancelled' || booking.status === 'checked_out') {
+      throw new BadRequestException('Đơn đặt phòng đã bị hủy hoặc đã trả phòng');
+    }
+
+    const isCheckedIn = booking.status === 'checked_in';
+
+    return this.prisma.$transaction(async (tx) => {
+      const baseReason = booking.cancellationReason?.startsWith('PENDING_CANCEL')
+        ? `Yêu cầu hủy được duyệt: ${booking.cancellationReason.replace('PENDING_CANCEL:', '').trim()}`
+        : 'Admin hủy đơn hàng';
+
+      const updatedBooking = await tx.booking.update({
+        where: { id },
+        data: {
+          status: isCheckedIn ? 'checked_out' : 'cancelled',
+          cancelledById: BigInt(adminUser.id),
+          cancelledAt: new Date(),
+          cancellationReason: isCheckedIn
+            ? `${baseReason} (Trả phòng sớm - không hoàn tiền)`
+            : baseReason,
+        },
+      });
+
+      // Restore availability
+      const inventoryRows = await tx.$queryRaw<Array<{ ratePlanId: bigint; roomsCount: bigint }>>`
+        SELECT
+          rate_plan_id AS "ratePlanId",
+          COUNT(*) AS "roomsCount"
+        FROM booking_rooms
+        WHERE booking_id = ${id}
+        GROUP BY rate_plan_id
+      `;
+
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const restoreFrom = isCheckedIn
+        ? (today > booking.checkInDate ? today : booking.checkInDate)
+        : booking.checkInDate;
+
+      if (restoreFrom < booking.checkOutDate) {
+        for (const row of inventoryRows) {
+          await tx.$executeRaw`
+            UPDATE daily_rates
+            SET available_qty = available_qty + ${Number(row.roomsCount)}
+            WHERE rate_plan_id = ${row.ratePlanId}
+              AND date >= ${restoreFrom}
+              AND date < ${booking.checkOutDate}
+          `;
+        }
+      }
+
+      return updatedBooking;
     });
   }
 
@@ -375,6 +442,7 @@ export class AdminService {
       where: { id },
       data: {
         status: 'confirmed',
+        cancellationReason: null, // Clear the PENDING_CANCEL flag
       },
     });
   }
